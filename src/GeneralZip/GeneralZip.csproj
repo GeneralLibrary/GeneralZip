@@ -6,17 +6,28 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <Description>跨格式压缩组件：ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4，支持 ZipCrypto、WinZip AES、国密 SM4-GM 加密与事件驱动 API。</Description>
-    <PackageTags>zip;7z;rar;compression;archive;sm4;国密;encryption;tar;gzip;zstd;lz4</PackageTags>
-    <RepositoryUrl>https://github.com/GeneralZip/GeneralZip</RepositoryUrl>
+    <Description>Cross-format compression library for .NET: ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4 with ZipCrypto, WinZip AES, Chinese national crypto (SM4-GM) and an event-driven API. 跨格式压缩组件：ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4，支持 ZipCrypto、WinZip AES、国密 SM4-GM 加密与事件驱动 API。</Description>
+    <PackageTags>zip;7z;rar;compression;archive;sm4;guomi;encryption;tar;gzip;zstd;lz4;bzip2;xz</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/GeneralLibrary/GeneralZip.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/GeneralLibrary/GeneralZip</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 设计约束：除微软官方维护的包外，不引入任何第三方 NuGet。
-         国密（SM3/SM4/HMAC/PBKDF2-SM3）与 TAR/GZip 容器为本组件纯 C# 实现；
-         bzip2/xz/zstd/lz4 编解码经 Rust 原生核心（GeneralZip.Native）。 -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Design constraint: no third-party NuGet dependencies other than Microsoft-maintained
+         packages. SM3/SM4/SM-HMAC/PBKDF2-SM3 and the TAR/GZip containers are pure C# in this
+         project; bzip2/xz/zstd/lz4 codecs go through the Rust native core (GeneralZip.Native). -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.0" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

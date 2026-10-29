@@ -6,14 +6,40 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <Description>GeneralZip 的 Rust 原生核心绑定：7z 读写（含 AES-256 加密）、RAR 解密读取。核心缺失时优雅降级。</Description>
-    <PackageTags>zip;7z;rar;compression;native;rust</PackageTags>
+    <Description>Rust native core bindings for GeneralZip: 7z read/write (with AES-256), RAR decryption, bzip2/xz/zstd/lz4 codecs. Degrades gracefully when the core is missing. GeneralZip 的 Rust 原生核心绑定：7z 读写（含 AES-256 加密）、RAR 解密读取、bzip2/xz/zstd/lz4 编解码。核心缺失时优雅降级。</Description>
+    <PackageTags>zip;7z;rar;compression;native;rust;sm4;guomi</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/GeneralLibrary/GeneralZip.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/GeneralLibrary/GeneralZip</PackageProjectUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    Native core binaries are packed as runtimes/<RID>/native/* so the consuming app
+    gets them via the standard .NET RID deployment model. The CI release workflow
+    builds the Rust core per RID and populates this folder before packing.
+    Local builds: run build/build.ps1 (copies the dll for the current RID).
+  -->
+  <ItemGroup>
+    <None Include="runtimes\**\native\*"
+          Pack="true"
+          PackagePath="runtimes"
+          Visible="false"
+          Condition="Exists('runtimes\win-x64\native\generalzip_native.dll')" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\GeneralZip\GeneralZip.csproj" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
