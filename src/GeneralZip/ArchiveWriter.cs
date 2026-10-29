@@ -48,14 +48,14 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
 
         var reg = registry ?? ArchiveFormatRegistry.Default;
         var format = formatName != null
-            ? reg.FindByName(formatName) ?? throw new UnsupportedFormatException($"未注册的格式：{formatName}")
+            ? reg.FindByName(formatName) ?? throw new UnsupportedFormatException($"Unregistered format: {formatName}")
             : reg.DetectByExtension(archivePath)
               ?? throw new UnsupportedFormatException(
-                  $"无法从扩展名识别格式：{archivePath}。请用 formatName 显式指定，或注册自定义格式。");
+                  $"Cannot detect format from extension: {archivePath}. Specify it explicitly via formatName, or register a custom format.");
 
         if (!format.Info.CanWrite)
         {
-            throw new UnsupportedFormatException($"格式 {format.Info.Name} 不支持创建归档");
+            throw new UnsupportedFormatException($"Format {format.Info.Name} does not support creating archives");
         }
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(archivePath));
@@ -90,11 +90,11 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
 
         var reg = registry ?? ArchiveFormatRegistry.Default;
         var format = reg.FindByName(formatName)
-                     ?? throw new UnsupportedFormatException($"未注册的格式：{formatName}");
+                     ?? throw new UnsupportedFormatException($"Unregistered format: {formatName}");
 
         if (!format.Info.CanWrite)
         {
-            throw new UnsupportedFormatException($"格式 {format.Info.Name} 不支持创建归档");
+            throw new UnsupportedFormatException($"Format {format.Info.Name} does not support creating archives");
         }
 
         return OpenOnStreamCore(output, format, options);
@@ -182,7 +182,7 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
     private static FileStream OpenSourceFile(string filePath, string? entryName, out string name, out long size, out DateTimeOffset? mtime)
     {
         if (filePath == null) throw new ArgumentNullException(nameof(filePath));
-        if (!File.Exists(filePath)) throw new FileNotFoundException("源文件不存在", filePath);
+        if (!File.Exists(filePath)) throw new FileNotFoundException("Source file does not exist", filePath);
 
         var fi = new FileInfo(filePath);
         name = EntryPathResolver.NormalizeEntryName(entryName ?? fi.Name);
@@ -194,7 +194,7 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
     private async Task AddDirectoryCore(string directoryPath, string? entryPrefix, Predicate<string>? filter, bool async, CancellationToken ct)
     {
         if (directoryPath == null) throw new ArgumentNullException(nameof(directoryPath));
-        if (!Directory.Exists(directoryPath)) throw new DirectoryNotFoundException($"源目录不存在：{directoryPath}");
+        if (!Directory.Exists(directoryPath)) throw new DirectoryNotFoundException($"Source directory does not exist: {directoryPath}");
 
         var root = Path.GetFullPath(directoryPath);
         var prefix = entryPrefix == null ? string.Empty : EntryPathResolver.NormalizeEntryName(entryPrefix).TrimEnd('/');

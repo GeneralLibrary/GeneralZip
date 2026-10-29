@@ -61,7 +61,7 @@ public static class NativeCoreLoader
                 }
                 catch (Exception ex)
                 {
-                    _failureReason = $"加载失败 {found}: {ex.Message}";
+                    _failureReason = $"Load failed for {found}: {ex.Message}";
                 }
             }
 
@@ -76,13 +76,13 @@ public static class NativeCoreLoader
         if (!TryLoad())
         {
             throw new NativeCoreMissingException(
-                "GeneralZip 原生核心（generalzip_native）未加载，7z/RAR 能力不可用。\n" +
-                $"探测详情：{_failureReason}\n" +
-                "部署方式（任选其一）：\n" +
-                "  1) 将对应 RID 的 generalzip_native.dll/.so/.dylib 放到应用目录；\n" +
-                "  2) 放到 <应用目录>/runtimes/<RID>/native/（win-x64/win-x86/linux-x64/osx-arm64）；\n" +
-                "  3) 设置环境变量 GENERALZIP_NATIVE 指向库文件；\n" +
-                "  4) 从仓库 native/generalzip-native 运行 cargo build --release 自行构建。");
+                "The GeneralZip native core (generalzip_native) is not loaded; 7z/RAR capabilities are unavailable.\n" +
+                $"Probe details: {_failureReason}\n" +
+                "Deployment options (any one of):\n" +
+                "  1) Place generalzip_native.dll/.so/.dylib for your RID in the application directory;\n" +
+                "  2) Place it under <app dir>/runtimes/<RID>/native/ (win-x64/win-x86/linux-x64/osx-arm64);\n" +
+                "  3) Set the GENERALZIP_NATIVE environment variable to the library path;\n" +
+                "  4) Build it yourself: run cargo build --release in native/generalzip-native of the repository.");
         }
     }
 
@@ -129,11 +129,11 @@ public static class NativeCoreLoader
         {
             if (File.Exists(candidate))
             {
-                return (candidate, "已找到");
+                return (candidate, "found");
             }
         }
 
-        return (null, $"以下路径均未找到 {LibraryFileName}：{string.Join("; ", candidates)}");
+        return (null, $"{LibraryFileName} was not found in any of these paths: {string.Join("; ", candidates)}");
     }
 
     internal static string LibraryFileName =>

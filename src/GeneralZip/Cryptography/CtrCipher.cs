@@ -20,7 +20,7 @@ public sealed class AesBlockCipher : IBlockCipher16
     public AesBlockCipher(byte[] key)
     {
         if (key == null) throw new ArgumentNullException(nameof(key));
-        if (key.Length != 16 && key.Length != 32) throw new ArgumentException("AES 密钥必须为 16/32 字节", nameof(key));
+        if (key.Length != 16 && key.Length != 32) throw new ArgumentException("AES key must be 16 or 32 bytes", nameof(key));
 
         using var aes = Aes.Create();
         aes.Key = key;
@@ -64,7 +64,7 @@ public sealed class CtrCipher
     {
         if (cipher == null) throw new ArgumentNullException(nameof(cipher));
         if (key == null) throw new ArgumentNullException(nameof(key));
-        if (iv == null || iv.Length != 16) throw new ArgumentException("IV 必须为 16 字节", nameof(iv));
+        if (iv == null || iv.Length != 16) throw new ArgumentException("IV must be 16 bytes", nameof(iv));
 
         _cipher = cipher;
         _littleEndian = littleEndian;
@@ -276,7 +276,7 @@ public class CtrReadStream : Stream
         var n = _source.Read(buffer, offset, toRead);
         if (n <= 0)
         {
-            throw new ArchiveCorruptedException("密文数据意外截断");
+            throw new ArchiveCorruptedException("Ciphertext data unexpectedly truncated");
         }
 
         _mac.Append(buffer, offset, n); // 先对原始密文做 MAC（buffer 即将被就地解密覆盖）
@@ -309,7 +309,7 @@ public class CtrReadStream : Stream
             var n = _source.Read(actual, total, actual.Length - total);
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("HMAC 尾部缺失或截断");
+                throw new ArchiveCorruptedException("HMAC trailer missing or truncated");
             }
 
             total += n;
@@ -317,7 +317,7 @@ public class CtrReadStream : Stream
 
         if (!Kdf.FixedTimeEquals(expected, actual, _trailerLength))
         {
-            throw new ArchiveCorruptedException("完整性校验失败（HMAC 不匹配）：数据被篡改或口令错误");
+            throw new ArchiveCorruptedException("Integrity check failed (HMAC mismatch): data was tampered with or the password is wrong");
         }
 
         Array.Clear(expected, 0, expected.Length);

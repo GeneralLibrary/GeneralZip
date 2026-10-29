@@ -37,7 +37,7 @@ public class NativeCoreTests : IDisposable
         }
 
         // 无产物时输出原因（本地未跑 cargo build）
-        Assert.True(true, $"SKIPPED: 原生核心未加载：{NativeCoreLoader.FailureReason}");
+        Assert.True(true, $"SKIPPED: native core not loaded: {NativeCoreLoader.FailureReason}");
         return true;
     }
 
@@ -48,7 +48,7 @@ public class NativeCoreTests : IDisposable
     {
         if (!NativeCoreLoader.TryLoad())
         {
-            Assert.True(true, $"SKIPPED: 原生核心未加载：{NativeCoreLoader.FailureReason}");
+            Assert.True(true, $"SKIPPED: native core not loaded: {NativeCoreLoader.FailureReason}");
             return;
         }
 

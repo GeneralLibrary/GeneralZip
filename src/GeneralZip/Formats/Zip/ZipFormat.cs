@@ -12,7 +12,7 @@ public sealed class ZipFormat : IArchiveFormat
         new[] { ".zip" },
         FormatCapabilities.Read | FormatCapabilities.Write | FormatCapabilities.EncryptedRead |
         FormatCapabilities.EncryptedWrite | FormatCapabilities.SeekableRead | FormatCapabilities.Append,
-        "ZIP：Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM（国密）");
+        "ZIP: Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM");
 
     public bool MatchesSignature(Stream stream)
     {
@@ -54,14 +54,14 @@ public sealed class ZipFormat : IArchiveFormat
     public IArchiveReader OpenRead(Stream stream, ArchiveOpenOptions options)
     {
         if (options == null) throw new ArgumentNullException(nameof(options));
-        if (!stream.CanRead) throw new ArgumentException("流必须可读", nameof(stream));
+        if (!stream.CanRead) throw new ArgumentException("Stream must be readable", nameof(stream));
         return new ZipReader(stream, options, ownsStream: false);
     }
 
     public IArchiveWriter OpenWrite(Stream stream, ArchiveWriteOptions options)
     {
         if (options == null) throw new ArgumentNullException(nameof(options));
-        if (!stream.CanWrite) throw new ArgumentException("流必须可写", nameof(stream));
+        if (!stream.CanWrite) throw new ArgumentException("Stream must be writable", nameof(stream));
         return new ZipWriter(stream, options, ownsStream: false);
     }
 }

@@ -68,13 +68,13 @@ pub extern "system" fn gzp_free(ptr: *mut c_void) {
 /// C 字符串 → &str（非法 UTF-8 报参数错误）。
 pub(crate) fn str_from_c_ptr<'a>(ptr: *const c_char) -> Result<&'a str, c_int> {
     if ptr.is_null() {
-        set_error("path 参数为空");
+        set_error("path argument is null");
         return Err(status::ERR_ARG);
     }
     unsafe { CStr::from_ptr(ptr) }
         .to_str()
         .map_err(|_| {
-            set_error("path 不是合法 UTF-8");
+                set_error("path is not valid UTF-8");
             status::ERR_ARG
         })
 }

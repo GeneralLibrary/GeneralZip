@@ -6,7 +6,7 @@ namespace GeneralZip;
 public class ArchiveException : Exception
 {
     public ArchiveException(string message, string? entryName = null, Exception? inner = null)
-        : base(entryName == null ? message : $"{message}（条目：{entryName}）", inner)
+        : base(entryName == null ? message : $"{message} (entry: {entryName})", inner)
     {
         EntryName = entryName;
     }
@@ -37,7 +37,7 @@ public sealed class NativeCoreMissingException : ArchiveException
 public sealed class PasswordRequiredException : ArchiveException
 {
     public PasswordRequiredException(string? entryName)
-        : base("该内容已加密，需要提供口令。请设置 options.Password、订阅 PasswordRequired 事件，或经由 IPasswordProvider 提供。", entryName)
+        : base("This content is encrypted and requires a password. Set options.Password, subscribe to the PasswordRequired event, or supply it via an IPasswordProvider.", entryName)
     {
     }
 }
@@ -46,7 +46,7 @@ public sealed class PasswordRequiredException : ArchiveException
 public sealed class InvalidPasswordException : ArchiveException
 {
     public InvalidPasswordException(string? entryName, int attempt = 0, Exception? inner = null)
-        : base(attempt > 0 ? $"口令错误（第 {attempt} 次尝试）。" : "口令错误。", entryName, inner)
+        : base(attempt > 0 ? $"Wrong password (attempt {attempt})." : "Wrong password.", entryName, inner)
     {
         Attempt = attempt;
     }

@@ -79,17 +79,17 @@ public sealed class ArchiveWriteOptions
         var provider = registry.Find(EncryptionAlgorithm);
         if (provider == null)
         {
-            throw new UnsupportedFormatException($"未注册的加密算法：{EncryptionAlgorithm}");
+            throw new UnsupportedFormatException($"Unregistered encryption algorithm: {EncryptionAlgorithm}");
         }
 
         if (!provider.SupportsWrite)
         {
-            throw new NotSupportedException($"加密算法 {provider.AlgorithmId} 不支持写入");
+            throw new NotSupportedException($"Encryption algorithm {provider.AlgorithmId} does not support writing");
         }
 
         if (Password == null)
         {
-            throw new ArgumentException($"算法 {provider.AlgorithmId} 需要口令（options.Password）", nameof(Password));
+            throw new ArgumentException($"Algorithm {provider.AlgorithmId} requires a password (options.Password)", nameof(Password));
         }
 
         return provider;

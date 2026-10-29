@@ -19,7 +19,7 @@ public sealed class SevenZipNativeFormat : IArchiveFormat
         new[] { ".7z" },
         FormatCapabilities.Read | FormatCapabilities.Write | FormatCapabilities.EncryptedRead |
         FormatCapabilities.EncryptedWrite | FormatCapabilities.SeekableRead,
-        "7z（Rust 原生核心：LZMA2 + AES-256）");
+        "7z (Rust native core: LZMA2 + AES-256)");
 
     public bool MatchesSignature(Stream stream)
     {
@@ -78,14 +78,14 @@ internal sealed class SevenZipNativeReader : IArchiveReader
         _tempPath = ResolveTempSourcePath(stream);
         if (_tempPath == null)
         {
-            throw new NotSupportedException("7z 读取需要可寻址流或文件路径来源（原生核心按路径打开归档）");
+            throw new NotSupportedException("7z reading requires a seekable stream or a file-path source (the native core opens archives by path)");
         }
     }
 
     public ArchiveFormatInfo Format { get; } = new(
         "7Z", new[] { ".7z" },
         FormatCapabilities.Read | FormatCapabilities.EncryptedRead | FormatCapabilities.SeekableRead,
-        "7z（原生核心）");
+        "7z (native core)");
 
     public IReadOnlyList<IArchiveEntry> Entries => EnsureEntries();
 
@@ -111,7 +111,7 @@ internal sealed class SevenZipNativeReader : IArchiveReader
     {
         if (entry is not NativeEntryView view || !TryIndexOf(entry, out var index))
         {
-            throw new ArgumentException("条目不属于当前归档", nameof(entry));
+            throw new ArgumentException("Entry does not belong to this archive", nameof(entry));
         }
 
         var password = PasswordResolver.Resolve(_options, entry.FullName);
@@ -124,7 +124,7 @@ internal sealed class SevenZipNativeReader : IArchiveReader
         if (status != GzpNative.GzpOk)
         {
             TryDelete(tempFile);
-            throw NativeCall.ToException(status, "7z 条目解压失败", entry.FullName);
+            throw NativeCall.ToException(status, "7z entry extraction failed", entry.FullName);
         }
 
         return new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read, 65536,
@@ -226,7 +226,7 @@ internal sealed class SevenZipNativeWriter : IArchiveWriter
     public ArchiveFormatInfo Info { get; } = new(
         "7Z", new[] { ".7z" },
         FormatCapabilities.Write | FormatCapabilities.EncryptedWrite | FormatCapabilities.SeekableRead,
-        "7z（原生核心）");
+        "7z (native core)");
 
     public ArchiveWriteOptions Options => _options;
 
@@ -267,7 +267,7 @@ internal sealed class SevenZipNativeWriter : IArchiveWriter
 
         if (_sources.Count == 0)
         {
-            throw new InvalidOperationException("7z 归档至少需要一个条目");
+            throw new InvalidOperationException("A 7z archive requires at least one entry");
         }
 
         // 原生核心按路径产出归档；为避免与门面持有的输出流争锁，先写临时文件再回拷
@@ -279,7 +279,7 @@ internal sealed class SevenZipNativeWriter : IArchiveWriter
             password != null ? (uint)(password.Length - 1) : 0, null, IntPtr.Zero);
         if (status != GzpNative.GzpOk)
         {
-            throw NativeCall.ToException(status, "7z 压缩失败");
+            throw NativeCall.ToException(status, "7z compression failed");
         }
 
         try
@@ -326,7 +326,7 @@ internal sealed class SevenZipNativeWriter : IArchiveWriter
     {
         var n = name.Replace('\\', '/').TrimStart('/');
         while (n.Contains("//")) n = n.Replace("//", "/");
-        if (n.Length == 0) throw new ArgumentException("条目名为空");
+        if (n.Length == 0) throw new ArgumentException("Entry name is empty");
         return n;
     }
 

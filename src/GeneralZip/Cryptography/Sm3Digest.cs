@@ -41,7 +41,7 @@ public sealed class Sm3Digest
     public void BlockUpdate(byte[] data, int offset, int count)
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
-        if (_finalized) throw new InvalidOperationException("摘要已完成计算，请先 Reset");
+        if (_finalized) throw new InvalidOperationException("Digest already finalized; call Reset first");
 
         var pos = offset;
         var remaining = count;
@@ -79,8 +79,8 @@ public sealed class Sm3Digest
     public int DoFinal(byte[] output, int offset)
     {
         if (output == null) throw new ArgumentNullException(nameof(output));
-        if (output.Length - offset < 32) throw new ArgumentException("输出缓冲区不足 32 字节", nameof(output));
-        if (_finalized) throw new InvalidOperationException("摘要已完成计算，请先 Reset");
+        if (output.Length - offset < 32) throw new ArgumentException("Output buffer is smaller than 32 bytes", nameof(output));
+        if (_finalized) throw new InvalidOperationException("Digest already finalized; call Reset first");
 
         var bitLength = _totalBytes * 8;
 

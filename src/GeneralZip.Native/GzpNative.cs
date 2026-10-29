@@ -45,7 +45,7 @@ internal static class GzpNative
         }
         while (false);
 
-        return len > 0 ? Encoding.UTF8.GetString(buf, 0, len) : "未知原生错误";
+        return len > 0 ? Encoding.UTF8.GetString(buf, 0, len) : "unknown native error";
     }
 
     [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]

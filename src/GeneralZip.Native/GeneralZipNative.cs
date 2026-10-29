@@ -77,7 +77,7 @@ public static class GeneralZipNative
             return true;
         }
 
-        throw NativeCall.ToException(status, $"原生编解码失败（{codec}，{(compress ? "压缩" : "解压")}）");
+        throw NativeCall.ToException(status, $"Native codec failed ({codec}, {(compress ? "compress" : "decompress")})");
     }
 
     /// <summary>原生核心版本号（未加载为 null）。</summary>

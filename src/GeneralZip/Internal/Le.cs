@@ -73,7 +73,7 @@ internal static class Le
             var n = s.Read(buffer, total, count - total);
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("ZIP 结构数据不完整（流意外结束）");
+                throw new ArchiveCorruptedException("Malformed ZIP structure (unexpected end of stream)");
             }
 
             total += n;

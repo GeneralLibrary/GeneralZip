@@ -34,11 +34,11 @@ fn main() {
     }
 
     let Some(def_in) = def else {
-        eprintln!("gzdlltool: 缺少 -d 参数");
+        eprintln!("gzdlltool: missing -d argument");
         std::process::exit(1);
     };
     let Some(out_lib) = out_lib else {
-        eprintln!("gzdlltool: 缺少 -l 参数");
+        eprintln!("gzdlltool: missing -l argument");
         std::process::exit(1);
     };
 
@@ -62,14 +62,14 @@ fn main() {
         let patched = Path::new(out_lib.as_str())
             .with_file_name(format!("{}.patched.def", Path::new(&out_lib).file_stem().map(|s| s.to_string_lossy()).unwrap_or_default()));
         fs::write(&patched, format!("LIBRARY \"{dll_stem}\"\n{def_text}").as_bytes())
-            .expect("gzdlltool: 写入 patched.def 失败");
+            .expect("gzdlltool: failed to write patched.def");
         def_path = patched;
     }
     let def_display = def_path.to_string_lossy().into_owned();
     let out_display = PathBuf::from(&out_lib).to_string_lossy().into_owned();
 
     let lld = find_rust_lld().unwrap_or_else(|| {
-        eprintln!("gzdlltool: 未找到 rust-lld.exe（请把 rustup 工具链 bin 目录加入 PATH）");
+        eprintln!("gzdlltool: rust-lld.exe not found (add the rustup toolchain bin directory to PATH)");
         std::process::exit(1);
     });
 
@@ -88,11 +88,11 @@ fn main() {
     match status {
         Ok(s) if s.success() => {}
         Ok(s) => {
-            eprintln!("gzdlltool: rust-lld 退出码 {s}");
+            eprintln!("gzdlltool: rust-lld exited with code {s}");
             std::process::exit(s.code().unwrap_or(1));
         }
         Err(e) => {
-            eprintln!("gzdlltool: 启动 rust-lld 失败: {e}");
+            eprintln!("gzdlltool: failed to start rust-lld: {e}");
             std::process::exit(1);
         }
     }
@@ -131,7 +131,7 @@ fn assert_safe_argument(option: &str, value: &str) {
                     | '?' | '!' | '(' | ')' | '{' | '}'
             );
         if is_forbidden {
-            eprintln!("gzdlltool: 参数 {option} 含非法字符 {ch:?}，已拒绝执行");
+            eprintln!("gzdlltool: argument {option} contains illegal character {ch:?}; rejected");
             std::process::exit(1);
         }
     }

@@ -110,7 +110,7 @@ internal sealed class TarStreamReader : IDisposable
     {
         if (!_haveCurrent)
         {
-            throw new InvalidOperationException("当前无活动条目");
+            throw new InvalidOperationException("No active entry");
         }
 
         var toRead = (int)Math.Min(count, _dataRemaining);
@@ -122,7 +122,7 @@ internal sealed class TarStreamReader : IDisposable
             var n = _stream.Read(buffer, offset + total, toRead - total);
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("TAR 条目数据意外截断");
+                throw new ArchiveCorruptedException("TAR entry data unexpectedly truncated");
             }
 
             total += n;
@@ -154,7 +154,7 @@ internal sealed class TarStreamReader : IDisposable
             var n = _stream.Read(_skipBuffer, 0, (int)Math.Min(_skipBuffer.Length, remaining));
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("TAR 数据意外截断");
+                throw new ArchiveCorruptedException("TAR data unexpectedly truncated");
             }
 
             remaining -= n;
@@ -170,7 +170,7 @@ internal sealed class TarStreamReader : IDisposable
             var n = _stream.Read(data, total, (int)Math.Min(size - total, int.MaxValue));
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("TAR 条目数据意外截断");
+                throw new ArchiveCorruptedException("TAR entry data unexpectedly truncated");
             }
 
             total += n;
@@ -199,7 +199,7 @@ internal sealed class TarStreamReader : IDisposable
         if (header[257] != (byte)'u' || header[258] != (byte)'s' || header[259] != (byte)'t'
             || header[260] != (byte)'a' || header[261] != (byte)'r')
         {
-            throw new ArchiveCorruptedException("TAR 头部魔数错误（非 ustar 格式）");
+            throw new ArchiveCorruptedException("Invalid TAR header magic (not ustar format)");
         }
 
         var info = new TarHeaderInfo
@@ -224,7 +224,7 @@ internal sealed class TarStreamReader : IDisposable
         }
         else if (typeFlag is (byte)'1' or (byte)'2' or (byte)'3' or (byte)'4' or (byte)'6')
         {
-            throw new UnsupportedFormatException($"不支持的 TAR 条目类型 '{(char)typeFlag}'（链接/设备文件）");
+            throw new UnsupportedFormatException($"Unsupported TAR entry type '{(char)typeFlag}' (link/device file)");
         }
 
         // 校验和：头 148 字节 + 8 空格 + 后 356 字节
@@ -237,7 +237,7 @@ internal sealed class TarStreamReader : IDisposable
 
         if (storedChecksum >= 0 && storedChecksum != computed)
         {
-            throw new ArchiveCorruptedException($"TAR 头部校验和不匹配（存储 {storedChecksum}，计算 {computed}）");
+            throw new ArchiveCorruptedException($"TAR header checksum mismatch (stored {storedChecksum}, computed {computed})");
         }
 
         return info;
@@ -350,7 +350,7 @@ internal sealed class TarStreamWriter : IDisposable
     {
         if (_entryOpen)
         {
-            throw new InvalidOperationException("上一条目尚未关闭（CloseEntry）");
+            throw new InvalidOperationException("Previous entry is still open (CloseEntry)");
         }
 
         var header = BuildHeader(name, size, modTime, mode, isDirectory ? (byte)'5' : (byte)'0');
@@ -364,7 +364,7 @@ internal sealed class TarStreamWriter : IDisposable
     {
         if (!_entryOpen)
         {
-            throw new InvalidOperationException("未打开条目");
+            throw new InvalidOperationException("No open entry");
         }
 
         _stream.Write(buffer, offset, count);
@@ -415,7 +415,7 @@ internal sealed class TarStreamWriter : IDisposable
             var split = finalName.LastIndexOf('/', Math.Min(finalName.Length - 2, 154));
             if (split < 1 || finalName.Length - split - 1 > 100)
             {
-                throw new NotSupportedException("条目名过长且无法拆分为 ustar prefix（>255 字节）");
+                throw new NotSupportedException("Entry name too long and cannot be split into a ustar prefix (>255 bytes)");
             }
 
             prefix = finalName.Substring(0, split);
@@ -465,7 +465,7 @@ internal sealed class TarStreamWriter : IDisposable
         var bytes = encoding.GetBytes(value);
         if (bytes.Length > length)
         {
-            throw new ArgumentException($"TAR 名称字段超长（{bytes.Length} > {length}）");
+            throw new ArgumentException($"TAR name field too long ({bytes.Length} > {length})");
         }
 
         Buffer.BlockCopy(bytes, 0, header, offset, bytes.Length);
@@ -477,7 +477,7 @@ internal sealed class TarStreamWriter : IDisposable
         var bytes = Encoding.ASCII.GetBytes(value);
         if (bytes.Length > length)
         {
-            throw new ArgumentException($"TAR 字段超长（{bytes.Length} > {length}）");
+            throw new ArgumentException($"TAR field too long ({bytes.Length} > {length})");
         }
 
         Buffer.BlockCopy(bytes, 0, header, offset, bytes.Length);
@@ -490,7 +490,7 @@ internal sealed class TarStreamWriter : IDisposable
         var text = Convert.ToString(value, 8);
         if (text.Length > length - 1)
         {
-            throw new ArgumentException($"TAR 八进制字段溢出（{value} 超出 {length} 字节）");
+            throw new ArgumentException($"TAR octal field overflow ({value} exceeds {length} bytes)");
         }
 
         var pad = length - 1 - text.Length;

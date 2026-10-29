@@ -112,7 +112,7 @@ public sealed class ArchiveReader : IDisposable
         if (formatName != null)
         {
             format = reg.FindByName(formatName)
-                     ?? throw new UnsupportedFormatException($"未注册的格式：{formatName}");
+                     ?? throw new UnsupportedFormatException($"Unregistered format: {formatName}");
         }
         else
         {
@@ -139,15 +139,15 @@ public sealed class ArchiveReader : IDisposable
                 if (format == null)
                 {
                     throw new UnsupportedFormatException(
-                        $"无法识别的归档格式{(sourcePath != null ? $"：{sourcePath}" : string.Empty)}。" +
-                        "可经 ArchiveFormatRegistry 注册自定义格式，或用 Open(stream, formatName) 显式指定。");
+                        $"Unrecognized archive format{(sourcePath != null ? $": {sourcePath}" : string.Empty)}. " +
+                        "Register a custom format via ArchiveFormatRegistry, or specify one explicitly with Open(stream, formatName).");
                 }
             }
         }
 
         if (!format.Info.CanRead)
         {
-            throw new UnsupportedFormatException($"格式 {format.Info.Name} 不支持读取");
+            throw new UnsupportedFormatException($"Format {format.Info.Name} does not support reading");
         }
 
         if (stream.CanSeek)
@@ -328,7 +328,7 @@ public sealed class ArchiveReader : IDisposable
                 targetPath = EntryPathResolver.Resolve(destinationDirectory!, entry, flatten: options.Flatten);
                 if (targetPath == null)
                 {
-                    var ex = new ArchiveException("条目路径不安全（绝对路径或目录穿越），已拒绝解压", entry.FullName);
+                    var ex = new ArchiveException("Unsafe entry path (absolute path or path traversal); extraction denied", entry.FullName);
                     RaiseEntryFailed(entry, ex);
                     var retry = 0;
                     _ = HandleError(entry, ex, options, failures, progress, allowRetry: false, ref retry);
@@ -384,7 +384,7 @@ public sealed class ArchiveReader : IDisposable
 
                     if (action == OverwriteAction.Abort)
                     {
-                        RaiseEntryFailed(entry, new OperationCanceledException("覆盖询问选择了中止"));
+                        RaiseEntryFailed(entry, new OperationCanceledException("Overwrite prompt chose abort"));
                         return Outcome.Abort;
                     }
 
@@ -425,7 +425,7 @@ public sealed class ArchiveReader : IDisposable
             }
             catch (OperationCanceledException)
             {
-                RaiseEntryFailed(entry, new OperationCanceledException("操作已取消", cancellationToken));
+                RaiseEntryFailed(entry, new OperationCanceledException("Operation canceled", cancellationToken));
                 throw;
             }
             catch (InvalidPasswordException ex)
@@ -516,7 +516,7 @@ public sealed class ArchiveReader : IDisposable
         switch (options.OverwritePolicy)
         {
             case OverwritePolicy.Throw:
-                throw new IOException($"目标文件已存在：{targetPath}");
+                throw new IOException($"Target file already exists: {targetPath}");
             case OverwritePolicy.Overwrite:
                 return OverwriteAction.Overwrite;
             case OverwritePolicy.Skip:
@@ -598,7 +598,7 @@ public sealed class ArchiveReader : IDisposable
     {
         if (_inner is NullInner)
         {
-            throw new InvalidOperationException("读取器尚未初始化完成");
+            throw new InvalidOperationException("Reader is not initialized yet");
         }
     }
 
@@ -645,10 +645,10 @@ public sealed class ArchiveReader : IDisposable
 
         public bool IsEncrypted => false;
 
-        public Stream OpenEntryStream(IArchiveEntry entry) => throw new InvalidOperationException("读取器尚未初始化完成");
+        public Stream OpenEntryStream(IArchiveEntry entry) => throw new InvalidOperationException("Reader is not initialized yet");
 
         public void CopyEntryTo(IArchiveEntry entry, Stream destination, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("读取器尚未初始化完成");
+            => throw new InvalidOperationException("Reader is not initialized yet");
 
         public void Dispose() { }
     }

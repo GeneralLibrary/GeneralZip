@@ -71,7 +71,7 @@ public sealed class HmacSm3Incremental : IncrementalMac
     {
         if (_innerDone)
         {
-            throw new InvalidOperationException("MAC 已完成计算");
+            throw new InvalidOperationException("MAC already finalized");
         }
 
         _innerDone = true;

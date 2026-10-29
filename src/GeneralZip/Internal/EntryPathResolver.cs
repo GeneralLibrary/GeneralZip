@@ -94,7 +94,7 @@ internal static class EntryPathResolver
             }
         }
 
-        throw new IOException($"自动重命名失败（超过上限 {maxAttempts}）：{path}");
+        throw new IOException($"Auto-rename failed (exceeded limit of {maxAttempts}): {path}");
     }
 
     /// <summary>归档内条目名规范化：'/' 分隔、去起始分隔符。</summary>

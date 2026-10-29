@@ -22,7 +22,7 @@ pub unsafe extern "system" fn gzp_codec_compress(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("codec compress: 内部 panic");
+            set_error("codec compress: internal panic");
             status::ERR_PANIC
         }
     }
@@ -42,7 +42,7 @@ pub unsafe extern "system" fn gzp_codec_decompress(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("codec decompress: 内部 panic");
+            set_error("codec decompress: internal panic");
             status::ERR_PANIC
         }
     }
@@ -97,7 +97,7 @@ fn compress_impl(codec: *const c_char, src: *const c_char, dst: *const c_char) -
             // rust-zstd 0.4：压缩为一次性 API（内存缓冲）；解压为流式 Reader
             let mut data = Vec::new();
             if let Err(e) = input.read_to_end(&mut data) {
-                set_error(format!("codec compress(zstd): 读取失败: {e}"));
+                set_error(format!("codec compress(zstd): read failed: {e}"));
                 return status::ERR_IO;
             }
             let compressed = rust_zstd::compress(&data, 6);
@@ -105,7 +105,7 @@ fn compress_impl(codec: *const c_char, src: *const c_char, dst: *const c_char) -
         }
         "xz" => crate::xz::xz_encode(&mut input, &mut output),
         other => {
-            set_error(format!("codec compress: 不支持的编解码标识 {other}"));
+            set_error(format!("codec compress: unsupported codec id {other}"));
             return status::ERR_ARG;
         }
     };
@@ -160,7 +160,7 @@ fn decompress_impl(codec: *const c_char, src: *const c_char, dst: *const c_char)
         }
         "xz" => crate::xz::xz_decode(&mut input, &mut output).map(|_| 0u64),
         other => {
-            set_error(format!("codec decompress: 不支持的编解码标识 {other}"));
+            set_error(format!("codec decompress: unsupported codec id {other}"));
             return status::ERR_ARG;
         }
     };
@@ -181,14 +181,14 @@ fn open_source(path: &str) -> Result<BufReader<fs::File>, c_int> {
     fs::File::open(path)
         .map(BufReader::new)
         .map_err(|e| {
-            set_error(format!("codec: 打开 {path} 失败: {e}"));
+            set_error(format!("codec: failed to open {path}: {e}"));
             status::ERR_IO
         })
 }
 
 fn create_dest(path: &str) -> Result<fs::File, c_int> {
     fs::File::create(path).map_err(|e| {
-        set_error(format!("codec: 创建 {path} 失败: {e}"));
+        set_error(format!("codec: failed to create {path}: {e}"));
         status::ERR_IO
     })
 }

@@ -18,9 +18,9 @@ internal static class NativeCodecRouter
         if (!NativeBridgeProbe.IsAvailableSafe())
         {
             throw new NativeCoreMissingException(
-                "该编解码格式需要 Rust 原生核心（generalzip_native）。" +
-                "请引用 GeneralZip.Native 包并在启动时调用 GeneralZipNative.Initialize()，" +
-                "或将归档转存为 ZIP/TAR.GZ 等纯托管格式。");
+                "This codec format requires the Rust native core (generalzip_native). " +
+                "Reference the GeneralZip.Native package and call GeneralZipNative.Initialize() at startup, " +
+                "or re-save the archive as ZIP/TAR.GZ or another pure-managed format.");
         }
     }
 
@@ -32,7 +32,7 @@ internal static class NativeCodecRouter
         if (handler == null || !handler(codec, source, destination))
         {
             throw new NativeCoreMissingException(
-                $"原生核心不支持 {codec} 编码或未加载。请引用 GeneralZip.Native 并调用 GeneralZipNative.Initialize()。");
+                $"The native core does not support {codec} encoding or is not loaded. Reference GeneralZip.Native and call GeneralZipNative.Initialize().");
         }
     }
 
@@ -42,7 +42,7 @@ internal static class NativeCodecRouter
         if (handler == null || !handler(codec, source, destination))
         {
             throw new NativeCoreMissingException(
-                $"原生核心不支持 {codec} 解码或未加载。请引用 GeneralZip.Native 并调用 GeneralZipNative.Initialize()。");
+                $"The native core does not support {codec} decoding or is not loaded. Reference GeneralZip.Native and call GeneralZipNative.Initialize().");
         }
     }
 }
@@ -73,7 +73,7 @@ public static class NativeBridgeProbe
 public sealed class GZipFormat : SingleFileCodecFormat
 {
     public GZipFormat()
-        : base("GZIP", new[] { ".gz", ".gzip" }, ".gz", "gzip 单文件压缩", supportsWrite: true)
+        : base("GZIP", new[] { ".gz", ".gzip" }, ".gz", "gzip single-file compression", supportsWrite: true)
     {
     }
 
@@ -93,7 +93,7 @@ public sealed class GZipFormat : SingleFileCodecFormat
 public sealed class BZip2Format : SingleFileCodecFormat
 {
     public BZip2Format()
-        : base("BZIP2", new[] { ".bz2", ".bzip2" }, ".bz2", "bzip2 单文件压缩（原生核心）", supportsWrite: true)
+        : base("BZIP2", new[] { ".bz2", ".bzip2" }, ".bz2", "bzip2 single-file compression (native core)", supportsWrite: true)
     {
     }
 
@@ -118,7 +118,7 @@ public sealed class BZip2Format : SingleFileCodecFormat
 public sealed class XzFormat : SingleFileCodecFormat
 {
     public XzFormat()
-        : base("XZ", new[] { ".xz" }, ".xz", "xz（LZMA2）单文件压缩（原生核心）", supportsWrite: true)
+        : base("XZ", new[] { ".xz" }, ".xz", "xz (LZMA2) single-file compression (native core)", supportsWrite: true)
     {
     }
 
@@ -137,7 +137,7 @@ public sealed class XzFormat : SingleFileCodecFormat
 public sealed class ZstdFormat : SingleFileCodecFormat
 {
     public ZstdFormat()
-        : base("ZSTD", new[] { ".zst", ".zstd" }, ".zst", "Zstandard 单文件压缩（原生核心）", supportsWrite: true)
+        : base("ZSTD", new[] { ".zst", ".zstd" }, ".zst", "Zstandard single-file compression (native core)", supportsWrite: true)
     {
     }
 
@@ -155,7 +155,7 @@ public sealed class ZstdFormat : SingleFileCodecFormat
 public sealed class Lz4Format : SingleFileCodecFormat
 {
     public Lz4Format()
-        : base("LZ4", new[] { ".lz4" }, ".lz4", "LZ4 帧格式单文件压缩（原生核心）", supportsWrite: true)
+        : base("LZ4", new[] { ".lz4" }, ".lz4", "LZ4 frame single-file compression (native core)", supportsWrite: true)
     {
     }
 

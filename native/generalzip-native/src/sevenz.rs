@@ -61,7 +61,7 @@ pub unsafe extern "system" fn gzp_7z_list_json(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("7z list: 内部 panic");
+            set_error("7z list: internal panic");
             if !out_len.is_null() {
                 *out_len = 0;
             }
@@ -165,7 +165,7 @@ pub unsafe extern "system" fn gzp_7z_extract(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("7z extract: 内部 panic");
+            set_error("7z extract: internal panic");
             status::ERR_PANIC
         }
     }
@@ -211,7 +211,7 @@ unsafe fn extract_impl(
     // 需要解压的条目集合
     let want_all = index < 0;
     if !want_all && (index as usize) >= names.len() {
-        set_error(format!("7z: 条目索引越界 {index}（共 {}）", names.len()));
+        set_error(format!("7z: entry index out of range {index} (of {})", names.len()));
         return status::ERR_ARG;
     }
 
@@ -252,18 +252,18 @@ unsafe fn extract_impl(
                     };
                     if let Some(parent) = target.parent() {
                         fs::create_dir_all(parent).map_err(|e| {
-                            set_error(format!("创建目录失败 {:?}: {e}", parent));
+                            set_error(format!("failed to create directory {:?}: {e}", parent));
                             sevenz_rust2::Error::io(e)
                         })?;
                     }
 
                     let mut counting = CountingReader::new(stream, &mut gate);
                     let mut file = fs::File::create(&target).map_err(|e| {
-                        set_error(format!("创建文件失败 {:?}: {e}", target));
+                        set_error(format!("failed to create file {:?}: {e}", target));
                         sevenz_rust2::Error::io(e)
                     })?;
                     std::io::copy(&mut counting, &mut file).map_err(|e| {
-                        set_error(format!("写入条目失败 {:?}: {e}", rel));
+                        set_error(format!("failed to write entry {:?}: {e}", rel));
                         sevenz_rust2::Error::io(e)
                     })?;
                     let _ = done_before;
@@ -313,7 +313,7 @@ pub unsafe extern "system" fn gzp_7z_compress(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("7z compress: 内部 panic");
+            set_error("7z compress: internal panic");
             status::ERR_PANIC
         }
     }
@@ -338,7 +338,7 @@ unsafe fn compress_impl(
     let sources = match parse_json_string_array(&sources_text) {
         Some(v) => v,
         None => {
-            set_error("sources 不是合法的 JSON 字符串数组");
+            set_error("sources is not a valid JSON string array");
             return status::ERR_ARG;
         }
     };
@@ -362,13 +362,13 @@ unsafe fn compress_impl(
             match fs::metadata(&p) {
                 Ok(m) => total = total.saturating_add(m.len()),
                 Err(e) => {
-                    set_error(format!("无法读取 {src}: {e}"));
+                    set_error(format!("failed to read {src}: {e}"));
                     return status::ERR_NOT_FOUND;
                 }
             }
             jobs.push((p, file_name));
         } else {
-            set_error(format!("源路径不存在：{src}"));
+            set_error(format!("source path does not exist: {src}"));
             return status::ERR_NOT_FOUND;
         }
     }
@@ -402,7 +402,7 @@ unsafe fn compress_impl(
         let file = match fs::File::open(path) {
             Ok(f) => f,
             Err(e) => {
-                set_error(format!("打开文件失败 {path:?}: {e}"));
+                set_error(format!("failed to open file {path:?}: {e}"));
                 return status::ERR_IO;
             }
         };
@@ -444,7 +444,7 @@ pub unsafe extern "system" fn gzp_7z_test(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("7z test: 内部 panic");
+            set_error("7z test: internal panic");
             status::ERR_PANIC
         }
     }

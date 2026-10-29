@@ -76,9 +76,9 @@ internal static class NativeCall
             GzpNative.GzpErrNotFound => new FileNotFoundException($"{context}: {detail}"),
             GzpNative.GzpErrFormat => new ArchiveCorruptedException($"{context}: {detail}", entryName),
             GzpNative.GzpErrUnsupported => new NotSupportedException($"{context}: {detail}"),
-            GzpNative.GzpErrPanic => new ArchiveException($"{context}: 原生核心内部错误: {detail}", entryName),
-            GzpNative.GzpErrArg => new ArgumentException($"{context}: 参数错误: {detail}"),
-            GzpNative.GzpErrBuffer => new ArchiveException($"{context}: 缓冲区不足", entryName),
+            GzpNative.GzpErrPanic => new ArchiveException($"{context}: native core internal error: {detail}", entryName),
+            GzpNative.GzpErrArg => new ArgumentException($"{context}: invalid argument: {detail}"),
+            GzpNative.GzpErrBuffer => new ArchiveException($"{context}: buffer too small", entryName),
             _ => new ArchiveException($"{context}: {detail}", entryName),
         };
     }
@@ -99,7 +99,7 @@ internal static class NativeCall
 
         if (status != GzpNative.GzpErrBuffer)
         {
-            throw ToException(status, $"{(rar ? "RAR" : "7z")} 列表失败: {path}");
+            throw ToException(status, $"{(rar ? "RAR" : "7z")} listing failed: {path}");
         }
 
         var buffer = new byte[needed];
@@ -109,7 +109,7 @@ internal static class NativeCall
 
         if (status != GzpNative.GzpOk)
         {
-            throw ToException(status, $"{(rar ? "RAR" : "7z")} 列表失败: {path}");
+            throw ToException(status, $"{(rar ? "RAR" : "7z")} listing failed: {path}");
         }
 
         return System.Text.Encoding.UTF8.GetString(buffer);

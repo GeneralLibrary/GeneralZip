@@ -29,7 +29,7 @@ internal sealed class ZipReader : IArchiveReader
 
         if (!stream.CanSeek)
         {
-            throw new NotSupportedException("ZIP 读取需要可寻址流（ZIP 格式能力位不含顺序流读取）");
+            throw new NotSupportedException("ZIP reading requires a seekable stream (the ZIP format capability set has no sequential-stream read)");
         }
 
         var (centrals, _) = ZipStructure.ReadCentralDirectory(stream);
@@ -47,7 +47,7 @@ internal sealed class ZipReader : IArchiveReader
         new[] { ".zip" },
         FormatCapabilities.Read | FormatCapabilities.Write | FormatCapabilities.EncryptedRead |
         FormatCapabilities.EncryptedWrite | FormatCapabilities.SeekableRead | FormatCapabilities.Append,
-        "自研 ZIP 引擎：Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM");
+        "In-house ZIP engine: Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM");
 
     public IReadOnlyList<IArchiveEntry> Entries => _entries;
 
@@ -57,7 +57,7 @@ internal sealed class ZipReader : IArchiveReader
     {
         if (entry is not ZipEntryView view)
         {
-            throw new ArgumentException("条目不属于当前归档（须来自 Entries）", nameof(entry));
+            throw new ArgumentException("Entry does not belong to this archive (must come from Entries)", nameof(entry));
         }
 
         return OpenEntryStreamCore(view);
@@ -97,7 +97,7 @@ internal sealed class ZipReader : IArchiveReader
             {
                 throw unknownAlgorithm == null
                     ? new PasswordRequiredException(view.FullName)
-                    : new UnsupportedFormatException($"不支持的加密算法：{unknownAlgorithm}", view.FullName);
+                    : new UnsupportedFormatException($"Unsupported encryption algorithm: {unknownAlgorithm}", view.FullName);
             }
 
             var password = GetPassword(view.FullName);
@@ -137,7 +137,7 @@ internal sealed class ZipReader : IArchiveReader
                 // 全部候选失败（单候选的口令/完整性异常在此原样抛出）
                 if (candidates.Count == 1)
                 {
-                    throw new ArchiveException("解密失败", view.FullName, lastFailure);
+                    throw new ArchiveException("Decryption failed", view.FullName, lastFailure);
                 }
 
                 throw lastFailure ?? new InvalidPasswordException(view.FullName);
@@ -155,7 +155,7 @@ internal sealed class ZipReader : IArchiveReader
         {
             ZipConstants.MethodStore => source,
             ZipConstants.MethodDeflate => new DeflateStream(source, CompressionMode.Decompress, leaveOpen: true),
-            _ => throw new UnsupportedFormatException($"不支持的 ZIP 压缩方法：{effectiveMethod}", view.FullName),
+            _ => throw new UnsupportedFormatException($"Unsupported ZIP compression method: {effectiveMethod}", view.FullName),
         };
 
         // 4) CRC 校验（加密条目的 CRC 恒 0，由 HMAC 保证完整性；ZipCrypto 的 CRC 失败提示口令/损坏两种可能）
@@ -248,7 +248,7 @@ internal sealed class ZipReader : IArchiveReader
 
             if (id == 0x9901 && candidates.Count == 0)
             {
-                unknownAlgorithm = $"WinZip AES（无已注册提供者处理 0x{id:X4}）";
+                unknownAlgorithm = $"WinZip AES (no registered provider handles 0x{id:X4})";
             }
         }
 
@@ -307,7 +307,7 @@ internal sealed class ZipReader : IArchiveReader
             pos += 4 + size;
         }
 
-        throw new ArchiveCorruptedException("方法 99（加密）条目缺少真实压缩方法信息");
+        throw new ArchiveCorruptedException("Method 99 (encrypted) entry is missing its real compression method");
     }
 
     private string? GetPassword(string entryName)

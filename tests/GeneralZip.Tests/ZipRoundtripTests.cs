@@ -206,7 +206,7 @@ public class ZipRoundtripTests : IDisposable
             detected = true;
         }
 
-        Assert.True(detected, "篡改后的加密包必须被完整性校验拦截");
+        Assert.True(detected, "Tampered encrypted archive must be rejected by integrity checks");
     }
 
     [Fact]

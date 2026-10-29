@@ -110,8 +110,8 @@ public abstract class SingleFileCodecFormat : IArchiveFormat
         if ((_capabilities & FormatCapabilities.Write) == 0)
         {
             throw new NotSupportedException(
-                $"格式 {_name} 当前配置不支持写入" +
-                (RequiresKnownSizeForWrite ? "（需要原生编解码核心支持）" : string.Empty));
+                $"Format {_name} does not support writing in its current configuration" +
+                (RequiresKnownSizeForWrite ? " (requires the native codec core)" : string.Empty));
         }
     }
 }
@@ -141,7 +141,7 @@ internal sealed class CodecReader : IArchiveReader
     {
         if (Entries.Count == 0 || !ReferenceEquals(Entries[0], entry))
         {
-            throw new ArgumentException("条目不属于当前归档", nameof(entry));
+            throw new ArgumentException("Entry does not belong to this archive", nameof(entry));
         }
 
         return _decompressed;
@@ -216,7 +216,7 @@ internal sealed class CodecWriter : IArchiveWriter
 
         if (_owner.RequiresKnownSizeForWrite && metadata.Size < 0 && !content.CanSeek)
         {
-            throw new NotSupportedException($"格式 {_owner.Info.Name} 写入要求条目大小已知");
+            throw new NotSupportedException($"Format {_owner.Info.Name} requires a known entry size for writing");
         }
 
         var buffer = new byte[81920];

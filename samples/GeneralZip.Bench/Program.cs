@@ -19,9 +19,9 @@ var runs = args.Length > 2 && int.TryParse(args[2], out var r) ? r : 3;
 var nativeOk = GeneralZipNative.Initialize();
 Initialize();
 
-Console.WriteLine($"GeneralZip 性能基准  native={(nativeOk ? "可用" : "缺失(跳过7z/BZ2/XZ/ZSTD/LZ4)")}");
-Console.WriteLine($"Runtime: {Environment.Version}  OS: {Environment.OSVersion.VersionString}  逻辑核心: {Environment.ProcessorCount}");
-Console.WriteLine($"数据规格: {sizeMb} MB/份 × 3类 | 预热 {warmups} 次 | 测量 {runs} 次(取最优)");
+Console.WriteLine($"GeneralZip benchmark  native={(nativeOk ? "available" : "missing (skips 7z/BZ2/XZ/ZSTD/LZ4)")}");
+Console.WriteLine($"Runtime: {Environment.Version}  OS: {Environment.OSVersion.VersionString}  Logical cores: {Environment.ProcessorCount}");
+Console.WriteLine($"Data spec: {sizeMb} MB per profile x 3 | {warmups} warmup(s) | {runs} run(s) (best of)");
 Console.WriteLine();
 
 // ---------- 测试数据（确定性生成，三类典型负载） ----------
@@ -31,9 +31,9 @@ var mixedProfile = BuildMixedData(sizeMb);
 
 var profiles = new (string Name, byte[] Data)[]
 {
-    ("文本(高可压)", textProfile),
-    ("混合(中可压)", mixedProfile),
-    ("随机(不可压)", binaryProfile),
+    ("text (highly compressible)", textProfile),
+    ("mixed (medium)", mixedProfile),
+    ("random (incompressible)", binaryProfile),
 };
 
 // ---------- 基准项定义 ----------
@@ -66,15 +66,15 @@ var sequence = 0;
 
 foreach (var profile in profiles)
 {
-    Console.WriteLine($"━━━ 数据: {profile.Name}（{profile.Data.Length / 1024.0 / 1024:F1} MB）━━━");
-    Console.WriteLine($"{"格式@数据",-34} {"压缩MB/s",10} {"解压MB/s",10} {"压缩比",8}  {"产物",10}");
+    Console.WriteLine($"=== data: {profile.Name} ({profile.Data.Length / 1024.0 / 1024:F1} MB) ===");
+    Console.WriteLine($"{"format@data",-34} {"compress MB/s",13} {"extract MB/s",13} {"ratio",8}  {"output",10}");
     Console.WriteLine(new string('-', 82));
 
     foreach (var item in items)
     {
         if (item.NeedsNative && !nativeOk)
         {
-            Console.WriteLine($"{item.Label + "@" + profile.Name,-34} {"(跳过:无原生核心)",18}");
+            Console.WriteLine($"{item.Label + "@" + profile.Name,-34} {"(skipped: no native core)",22}");
             continue;
         }
 
@@ -86,7 +86,7 @@ foreach (var profile in profiles)
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{item.Label + "@" + profile.Name,-34} 失败: {ex.Message}");
+            Console.WriteLine($"{item.Label + "@" + profile.Name,-34} FAILED: {ex.Message}");
         }
     }
 
@@ -94,9 +94,9 @@ foreach (var profile in profiles)
 }
 
 // 汇总（以混合数据为主视图）
-Console.WriteLine("━━━ 汇总（混合数据）━━━");
-Console.WriteLine($"{"格式",-34} {"压缩MB/s",10} {"解压MB/s",10} {"压缩比",8}");
-foreach (var row in results.Where(x => x.Profile == "混合(中可压)"))
+Console.WriteLine("=== summary (mixed data) ===");
+Console.WriteLine($"{"format",-34} {"compress MB/s",13} {"extract MB/s",13} {"ratio",8}");
+foreach (var row in results.Where(x => x.Profile == "mixed (medium)"))
 {
     Console.WriteLine($"{row.Label,-34} {row.CompressMbps,10:F1} {row.DecompressMbps,10:F1} {row.Ratio,8:P1}");
 }
@@ -181,7 +181,7 @@ static long ReadArchive(string file, BenchItem item)
 
     if (total <= 0)
     {
-        throw new InvalidDataException($"{file}: 解压字节数为 0");
+        throw new InvalidDataException($"{file}: extracted 0 bytes");
     }
 
     return total;
@@ -190,7 +190,7 @@ static long ReadArchive(string file, BenchItem item)
 static byte[] BuildTextData(int sizeMb)
 {
     // 高可压：重复的中文/英文混合日志样式文本
-    var line = "2026-10-29 INFO [GeneralZip] 压缩组件性能基准测试 Lorem ipsum dolor sit amet 0123456789\r\n";
+    var line = "2026-10-29 INFO [GeneralZip] compression benchmark Lorem ipsum dolor sit amet 0123456789\r\n";
     var block = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat(line, 64)));
     var target = sizeMb * 1024 * 1024;
     var data = new byte[target];

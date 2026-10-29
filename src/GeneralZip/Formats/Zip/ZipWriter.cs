@@ -33,14 +33,14 @@ internal sealed class ZipWriter : IArchiveWriter
 
         if (!output.CanWrite)
         {
-            throw new ArgumentException("输出流必须可写", nameof(output));
+            throw new ArgumentException("Output stream must be writable", nameof(output));
         }
 
         var provider = options.ResolveProvider(encryption ?? EncryptionRegistry.Default);
         if (provider != null && provider.AlgorithmId == "ZipCrypto" && !options.AllowWeakZipCrypto)
         {
             throw new NotSupportedException(
-                "ZipCrypto 为弱加密，默认禁止写入。请设置 options.AllowWeakZipCrypto = true 显式启用（仅限遗留兼容场景）。");
+                "ZipCrypto is weak encryption and writing is disabled by default. Set options.AllowWeakZipCrypto = true to enable it explicitly (legacy interop scenarios only).");
         }
 
         _encryption = provider;
@@ -51,7 +51,7 @@ internal sealed class ZipWriter : IArchiveWriter
         new[] { ".zip" },
         FormatCapabilities.Read | FormatCapabilities.Write | FormatCapabilities.EncryptedRead |
         FormatCapabilities.EncryptedWrite | FormatCapabilities.SeekableRead | FormatCapabilities.Append,
-        "自研 ZIP 引擎：Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM");
+        "In-house ZIP engine: Store/Deflate/Zip64 + ZipCrypto/WinZip AES/SM4-GM");
 
     public ArchiveWriteOptions Options => _options;
 
@@ -192,7 +192,7 @@ internal sealed class ZipWriter : IArchiveWriter
         var comment = _options.ArchiveComment != null ? _options.EntryNameEncoding.GetBytes(_options.ArchiveComment) : Array.Empty<byte>();
         if (comment.Length > ushort.MaxValue)
         {
-            throw new ArgumentException("归档注释超过 64KB 上限");
+            throw new ArgumentException("Archive comment exceeds the 64KB limit");
         }
 
         var eocd = new byte[22 + comment.Length];
@@ -233,7 +233,7 @@ internal sealed class ZipWriter : IArchiveWriter
         {
             if (extraFieldId == null)
             {
-                throw new InvalidOperationException("加密计划缺少 extra field 标识");
+                throw new InvalidOperationException("Encryption plan is missing the extra field id");
             }
 
             extra = new byte[4 + encryptionExtra.Length];

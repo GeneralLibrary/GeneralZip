@@ -51,7 +51,7 @@ public sealed class Sm4Engine
     public void Init(bool forEncryption, byte[] key)
     {
         if (key == null) throw new ArgumentNullException(nameof(key));
-        if (key.Length != 16) throw new ArgumentException("SM4 密钥必须为 16 字节", nameof(key));
+        if (key.Length != 16) throw new ArgumentException("SM4 key must be 16 bytes", nameof(key));
 
         var mk = new uint[4];
         for (var i = 0; i < 4; i++)

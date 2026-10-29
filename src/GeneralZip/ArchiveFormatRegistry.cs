@@ -72,7 +72,7 @@ public sealed class ArchiveFormatRegistry
     public IArchiveFormat? Detect(Stream stream)
     {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
-        if (!stream.CanRead) throw new ArgumentException("流必须可读", nameof(stream));
+        if (!stream.CanRead) throw new ArgumentException("Stream must be readable", nameof(stream));
 
         IArchiveFormat[] formats;
         lock (_lock)

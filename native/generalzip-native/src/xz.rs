@@ -20,7 +20,7 @@ pub unsafe extern "system" fn gzp_xz_compress(src: *const c_char, dst: *const c_
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("xz compress: 内部 panic");
+            set_error("xz compress: internal panic");
             status::ERR_PANIC
         }
     }
@@ -36,7 +36,7 @@ pub unsafe extern "system" fn gzp_xz_decompress(src: *const c_char, dst: *const 
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("xz decompress: 内部 panic");
+            set_error("xz decompress: internal panic");
             status::ERR_PANIC
         }
     }
@@ -55,14 +55,14 @@ unsafe fn compress_impl(src: *const c_char, dst: *const c_char) -> c_int {
     let input = match fs::File::open(&src) {
         Ok(f) => BufReader::new(f),
         Err(e) => {
-            set_error(format!("xz: 打开 {src} 失败: {e}"));
+            set_error(format!("xz: failed to open {src}: {e}"));
             return status::ERR_IO;
         }
     };
     let mut output = match fs::File::create(&dst) {
         Ok(f) => f,
         Err(e) => {
-            set_error(format!("xz: 创建 {dst} 失败: {e}"));
+            set_error(format!("xz: failed to create {dst}: {e}"));
             return status::ERR_IO;
         }
     };
@@ -88,14 +88,14 @@ unsafe fn decompress_impl(src: *const c_char, dst: *const c_char) -> c_int {
     let input = match fs::File::open(&src) {
         Ok(f) => BufReader::new(f),
         Err(e) => {
-            set_error(format!("xz: 打开 {src} 失败: {e}"));
+            set_error(format!("xz: failed to open {src}: {e}"));
             return status::ERR_IO;
         }
     };
     let mut output = match fs::File::create(&dst) {
         Ok(f) => f,
         Err(e) => {
-            set_error(format!("xz: 创建 {dst} 失败: {e}"));
+            set_error(format!("xz: failed to create {dst}: {e}"));
             return status::ERR_IO;
         }
     };

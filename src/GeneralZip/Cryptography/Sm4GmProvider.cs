@@ -71,13 +71,13 @@ public sealed class Sm4GmProvider : IEncryptionProvider
     {
         if (!context.Parameters.TryGetValue("ZipExtraFieldData", out var raw) || raw is not byte[] extra)
         {
-            throw new ArchiveCorruptedException("缺少 SM4-GM extra field", context.EntryName);
+            throw new ArchiveCorruptedException("SM4-GM extra field is missing", context.EntryName);
         }
 
         var parsed = ParseExtraField(extra, context.EntryName);
         if (context.CipherDataSize >= 0 && context.CipherDataSize < MacLength)
         {
-            throw new ArchiveCorruptedException("SM4-GM 密文数据长度不足", context.EntryName);
+            throw new ArchiveCorruptedException("SM4-GM ciphertext data is too short", context.EntryName);
         }
 
         var payloadLength = context.CipherDataSize - MacLength;
@@ -144,25 +144,25 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         if (data.Length < minLength
             || data[0] != (byte)'G' || data[1] != (byte)'M' || data[2] != (byte)'S' || data[3] != (byte)'M')
         {
-            throw new ArchiveCorruptedException("SM4-GM extra field 非法（Magic/长度）", entryName);
+            throw new ArchiveCorruptedException("Invalid SM4-GM extra field (magic/length)", entryName);
         }
 
         var version = data[4];
         if (version != SpecVersion)
         {
-            throw new UnsupportedFormatException($"SM4-GM 规范版本 {version} 不受支持（当前 {SpecVersion}）", entryName);
+            throw new UnsupportedFormatException($"Unsupported SM4-GM spec version {version} (supported: {SpecVersion})", entryName);
         }
 
         var mode = data[5];
         if (mode != CipherModeCtr)
         {
-            throw new UnsupportedFormatException($"SM4-GM 加密模式 {mode} 不受支持", entryName);
+            throw new UnsupportedFormatException($"Unsupported SM4-GM cipher mode {mode}", entryName);
         }
 
         var kdfId = data[6];
         if (kdfId != KdfIdPbkdf2Sm3)
         {
-            throw new UnsupportedFormatException($"SM4-GM KDF 标识 {kdfId} 不受支持", entryName);
+            throw new UnsupportedFormatException($"Unsupported SM4-GM KDF id {kdfId}", entryName);
         }
 
         var pos = 7;
@@ -170,7 +170,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         var saltLen = data[pos++];
         if (saltLen != SaltLength)
         {
-            throw new UnsupportedFormatException($"SM4-GM 盐长度 {saltLen} 不受支持", entryName);
+            throw new UnsupportedFormatException($"Unsupported SM4-GM salt length {saltLen}", entryName);
         }
 
         var salt = new byte[saltLen];
@@ -180,7 +180,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         var ivLen = data[pos++];
         if (ivLen != IvLength)
         {
-            throw new UnsupportedFormatException($"SM4-GM IV 长度 {ivLen} 不受支持", entryName);
+            throw new UnsupportedFormatException($"Unsupported SM4-GM IV length {ivLen}", entryName);
         }
 
         var iv = new byte[ivLen];

@@ -50,7 +50,7 @@ pub unsafe extern "system" fn gzp_rar_list_json(
         }
         Ok(Err(code)) => code,
         Err(_) => {
-            set_error("rar list: 内部 panic");
+            set_error("rar list: internal panic");
             status::ERR_PANIC
         }
     }
@@ -78,7 +78,7 @@ pub unsafe extern "system" fn gzp_rar_extract(
     match result {
         Ok(r) => r,
         Err(_) => {
-            set_error("rar extract: 内部 panic");
+            set_error("rar extract: internal panic");
             status::ERR_PANIC
         }
     }
@@ -169,7 +169,7 @@ fn extract_impl(
     }
 
     if (index as usize) >= names.len() {
-        set_error(format!("rar: 条目索引越界 {index}（共 {}）", names.len()));
+        set_error(format!("rar: entry index out of range {index} (of {})", names.len()));
         return status::ERR_ARG;
     }
 
@@ -198,7 +198,7 @@ fn extract_impl(
 fn apply_password(open: unrar::OpenArchive, password: Option<&str>) -> Result<unrar::OpenArchive, c_int> {
     match password {
         Some(pw) => open.set_password(pw).map_err(|_| {
-            set_error("rar: 无法应用口令");
+            set_error("rar: failed to apply password");
             status::ERR_PASSWORD
         }),
         None => Ok(open),

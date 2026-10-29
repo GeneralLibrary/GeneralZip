@@ -35,7 +35,7 @@ public class NativeCodecTests : IDisposable
             return false;
         }
 
-        Assert.True(true, $"SKIPPED: 原生核心未加载：{NativeCoreLoader.FailureReason}");
+        Assert.True(true, $"SKIPPED: native core not loaded: {NativeCoreLoader.FailureReason}");
         return true;
     }
 

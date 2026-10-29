@@ -5,13 +5,13 @@ using System.Text;
 using System.Threading;
 using GeneralZip;
 using GeneralZip.Abstractions;
-using GeneralZip.Internal;
 
 namespace GeneralZip.Formats.Tar;
 
 /// <summary>
-/// TAR 族格式提供者的共享实现：TAR / TAR.GZ / TAR.BZ2。
-/// TAR 容器为本组件自研 ustar 实现；压缩外层（gzip/bzip2）视可用性注入。
+/// Shared implementation for the TAR family of format providers: TAR / TAR.GZ / TAR.BZ2.
+/// The TAR container is this project's own ustar implementation; the compression
+/// wrapper (gzip/bzip2) is injected by subclasses.
 /// </summary>
 public abstract class TarFormatBase : IArchiveFormat
 {
@@ -26,13 +26,13 @@ public abstract class TarFormatBase : IArchiveFormat
 
     public ArchiveFormatInfo Info { get; }
 
-    /// <summary>外层解压包装（gzip/bzip2 等）；纯 TAR 返回原流。</summary>
+    /// <summary>Outer decompression wrapper (gzip/bzip2 etc.); pure TAR returns the stream unchanged.</summary>
     protected abstract Stream WrapDecompress(Stream source);
 
-    /// <summary>外层压缩包装；纯 TAR 返回原流。</summary>
+    /// <summary>Outer compression wrapper; pure TAR returns the stream unchanged.</summary>
     protected abstract Stream WrapCompress(Stream destination);
 
-    /// <summary>签名探测（外层压缩格式）；纯 TAR 由本类直接检查 ustar。</summary>
+    /// <summary>Signature probe for the outer compression format; pure TAR checks ustar directly.</summary>
     protected abstract bool MatchesOuterSignature(byte[] prefix, int length);
 
     public bool MatchesSignature(Stream stream)
@@ -42,10 +42,11 @@ public abstract class TarFormatBase : IArchiveFormat
 
         try
         {
-            // 纯 TAR 需要 262 字节定位 ustar 魔数；
-            // 外层压缩格式（gzip/bzip2）需要足够的压缩前缀解出前 262 字节。
-            // bzip2 经原生核心整段解码、无法"部分"解码——前缀过短会解码失败而误判，
-            // 因此读取最多 16MB 前缀；更大的文件由调用方的扩展名兜底逻辑纠正。
+            // Pure TAR needs 262 bytes to locate the ustar magic;
+            // outer compression formats need enough compressed prefix to decode the first 262 bytes.
+            // bzip2/xz are decoded whole-file by the native core and cannot be partially decoded —
+            // a too-short prefix would fail to decode and cause a misdetection, so read up to 16MB;
+            // larger files are corrected by the caller's extension fallback logic.
             var readSize = IsPureTar()
                 ? 262
                 : (int)Math.Min(Math.Max(stream.Length, 1), 16L * 1024 * 1024);
@@ -127,7 +128,7 @@ public abstract class TarFormatBase : IArchiveFormat
     }
 }
 
-/// <summary>TAR 条目视图。</summary>
+/// <summary>TAR entry view.</summary>
 internal sealed class TarEntryView : IArchiveEntry
 {
     public TarEntryView(string fullName, long size, DateTimeOffset? mtime, bool isDirectory)
@@ -158,13 +159,13 @@ internal sealed class TarEntryView : IArchiveEntry
     public string? Comment => null;
 }
 
-/// <summary>TAR 读取器（经解压包装流）。</summary>
+/// <summary>TAR reader (over a decompression wrapper stream).</summary>
 internal sealed class TarReader : IArchiveReader
 {
     private readonly List<TarEntryView> _entries = new();
     private Stream _inner;
     private readonly Func<Stream> _reopenDecompressed;
-    private TarStreamReader? _sequential; // 不可寻址模式下的顺序游标
+    private TarStreamReader? _sequential; // sequential cursor for non-seekable mode
 
     public TarReader(Func<Stream> openDecompressed, ArchiveFormatInfo info, ArchiveOpenOptions options)
     {
@@ -194,11 +195,12 @@ internal sealed class TarReader : IArchiveReader
 
         if (_inner.CanSeek)
         {
-            _inner.Position = 0; // 可寻址：条目流按需重新定位
+            _inner.Position = 0; // seekable: entry streams re-position on demand
         }
         else
         {
-            // 不可寻址（如 tar.gz 管道流）：探测已耗尽包装流——重建后作为顺序游标
+            // non-seekable (e.g. tar.gz pipe stream): the probe exhausted the wrapper —
+            // rebuild it and use it as the sequential cursor
             _inner.Dispose();
             _inner = openDecompressed();
             _sequential = OpenTarStream();
@@ -247,13 +249,12 @@ internal sealed class TarReader : IArchiveReader
 }
 
 /// <summary>
-/// 单条目顺序读取流。
-/// Seekable 模式：每次打开新建读取器前进到目标条目（支持随机访问）。
-/// Sequential 模式：复用共享读取器，要求按 Entries 顺序打开。
+/// Single-entry sequential read stream.
+/// Seekable mode: each open creates a fresh reader advanced to the target entry (random access).
+/// Sequential mode: shares one reader; entries must be opened in order.
 /// </summary>
 internal sealed class TarEntryStream : Stream
 {
-    private readonly TarStreamReader? _ownedReader;
     private readonly TarStreamReader _reader;
     private readonly long _size;
     private long _remaining;
@@ -261,21 +262,20 @@ internal sealed class TarEntryStream : Stream
     private readonly string _target;
     private readonly int _sequenceIndex;
 
-    private TarEntryStream(TarStreamReader reader, long size, string target, TarStreamReader? owned, int sequenceIndex)
+    private TarEntryStream(TarStreamReader reader, long size, string target, int sequenceIndex)
     {
         _reader = reader;
         _size = size;
         _remaining = size;
         _target = target;
-        _ownedReader = owned;
         _sequenceIndex = sequenceIndex;
     }
 
     public static TarEntryStream OpenSeekable(TarStreamReader reader, string target)
     {
         var size = Locate(reader, target);
-        var stream = new TarEntryStream(reader, size, target, reader, -1);
-        stream._initialized = true; // Locate 已把游标停在条目数据起点
+        var stream = new TarEntryStream(reader, size, target, -1);
+        stream._initialized = true; // Locate already positioned the cursor at the entry data
         stream._remaining = size;
         return stream;
     }
@@ -290,10 +290,10 @@ internal sealed class TarEntryStream : Stream
 
         if (index < 0)
         {
-            throw new ArgumentException("条目不属于当前归档", nameof(entry));
+            throw new ArgumentException("Entry does not belong to this archive", nameof(entry));
         }
 
-        return new TarEntryStream(reader, entry.Size, target, null, index);
+        return new TarEntryStream(reader, entry.Size, target, index);
     }
 
     private static long Locate(TarStreamReader reader, string target)
@@ -308,7 +308,7 @@ internal sealed class TarEntryStream : Stream
             }
         }
 
-        throw new ArchiveCorruptedException($"TAR 中未找到条目：{target}");
+        throw new ArchiveCorruptedException($"Entry not found in TAR: {target}");
     }
 
     private void EnsureInitialized()
@@ -316,20 +316,20 @@ internal sealed class TarEntryStream : Stream
         if (_initialized) return;
         _initialized = true;
 
-        // 顺序模式：共享游标推进到目标序号（GetNextEntry 自动跳过前面条目的数据）。
-        // 注意游标计数在 TarStreamReader 上共享，不能在 TarEntryStream 里单独累计。
+        // Sequential mode only (seekable mode was positioned in OpenSeekable).
+        // The cursor counter lives on the shared TarStreamReader.
         while (true)
         {
-            var upcoming = _reader.EntriesReturned; // 本次 GetNextEntry 将返回的条目序号
+            var upcoming = _reader.EntriesReturned; // index of the entry this call returns
             if (upcoming > _sequenceIndex)
             {
-                throw new ArchiveCorruptedException($"TAR 顺序游标已越过目标条目（{_sequenceIndex}）");
+                throw new ArchiveCorruptedException($"Sequential TAR cursor already passed target entry ({_sequenceIndex})");
             }
 
             var e = _reader.GetNextEntry();
             if (e == null)
             {
-                throw new ArchiveCorruptedException($"TAR 中未找到条目：{_target}");
+                throw new ArchiveCorruptedException($"Entry not found in TAR: {_target}");
             }
 
             if (upcoming == _sequenceIndex)
@@ -355,7 +355,7 @@ internal sealed class TarEntryStream : Stream
         var n = _reader.ReadCurrentEntryData(buffer, offset, toRead);
         if (n <= 0)
         {
-            throw new ArchiveCorruptedException($"TAR 条目数据意外截断：{_target}");
+            throw new ArchiveCorruptedException($"TAR entry data unexpectedly truncated: {_target}");
         }
 
         _remaining -= n;
@@ -371,20 +371,9 @@ internal sealed class TarEntryStream : Stream
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void SetLength(long value) => throw new NotSupportedException();
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-    protected override void Dispose(bool disposing)
-    {
-        // 仅释放本条目私有的读取器；共享/底层流由 TarReader 管理
-        if (disposing)
-        {
-            _ownedReader?.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
 }
 
-/// <summary>TAR 写入器（经压缩包装流）。TAR 要求条目大小已知。</summary>
+/// <summary>TAR writer (over a compression wrapper stream). TAR requires known entry sizes.</summary>
 internal sealed class TarWriter : IArchiveWriter
 {
     private readonly Stream _inner;
@@ -415,7 +404,7 @@ internal sealed class TarWriter : IArchiveWriter
     {
         if (!content.CanSeek && metadata.Size < 0)
         {
-            throw new NotSupportedException("TAR 格式要求条目大小已知：请对不可寻址流提供 metadata.Size");
+            throw new NotSupportedException("The TAR format requires a known entry size: provide metadata.Size for non-seekable streams");
         }
 
         var size = metadata.Size >= 0 ? metadata.Size : content.Length;
@@ -435,7 +424,7 @@ internal sealed class TarWriter : IArchiveWriter
 
         if (remaining > 0)
         {
-            throw new IOException($"源流数据不足：{entryName} 声明 {size} 字节，实际不足");
+            throw new IOException($"Source stream ran out of data: {entryName} declared {size} bytes but fewer were available");
         }
 
         _tar.CloseEntry();
@@ -472,14 +461,14 @@ internal sealed class TarWriter : IArchiveWriter
     {
         if (!_finished)
         {
-            try { Finish(CancellationToken.None); } catch { /* 不遮蔽主异常 */ }
+            try { Finish(CancellationToken.None); } catch { /* do not mask the original exception */ }
         }
 
         _inner.Dispose();
     }
 }
 
-/// <summary>纯 TAR 格式。</summary>
+/// <summary>Plain TAR format.</summary>
 public sealed class TarFormat : TarFormatBase
 {
     public TarFormat() : base("TAR", new[] { ".tar" }, "TAR (ustar)")
@@ -495,10 +484,10 @@ public sealed class TarFormat : TarFormatBase
     protected override bool IsPureTar() => true;
 }
 
-/// <summary>TAR.GZ（gzip 包装的 tar，gzip 编解码使用 .NET 内置 GZipStream）。</summary>
+/// <summary>TAR.GZ (gzip-wrapped tar; gzip uses the .NET built-in GZipStream).</summary>
 public sealed class TarGzFormat : TarFormatBase
 {
-    public TarGzFormat() : base("TAR.GZ", new[] { ".tar.gz", ".tgz" }, "gzip 压缩的 TAR")
+    public TarGzFormat() : base("TAR.GZ", new[] { ".tar.gz", ".tgz" }, "gzip-compressed TAR")
     {
     }
 
@@ -513,12 +502,12 @@ public sealed class TarGzFormat : TarFormatBase
 }
 
 /// <summary>
-/// TAR.BZ2（bzip2 包装的 tar）。bzip2 编解码经 Rust 原生核心（libbz2-rs 纯 Rust 实现）；
-/// 核心缺失时不可用。
+/// TAR.BZ2 (bzip2-wrapped tar). bzip2 codecs go through the Rust native core
+/// (libbz2-rs pure-Rust implementation); unavailable when the core is missing.
 /// </summary>
 public sealed class TarBz2Format : TarFormatBase
 {
-    public TarBz2Format() : base("TAR.BZ2", new[] { ".tar.bz2", ".tbz2", ".tbz" }, "bzip2 压缩的 TAR")
+    public TarBz2Format() : base("TAR.BZ2", new[] { ".tar.bz2", ".tbz2", ".tbz" }, "bzip2-compressed TAR")
     {
     }
 

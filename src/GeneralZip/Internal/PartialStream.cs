@@ -14,7 +14,7 @@ internal sealed class PartialStream : Stream
 
     public PartialStream(Stream inner, long origin, long length)
     {
-        if (!inner.CanSeek) throw new ArgumentException("PartialStream 需要可寻址的底层流", nameof(inner));
+        if (!inner.CanSeek) throw new ArgumentException("PartialStream requires a seekable underlying stream", nameof(inner));
         _inner = inner;
         _origin = origin;
         _length = length;
@@ -119,8 +119,8 @@ internal sealed class CrcCheckStream : Stream
             if (_expectedCrc.HasValue && _hasher.Value != _expectedCrc.Value)
             {
                 throw new ArchiveCorruptedException(
-                    $"CRC 校验失败（期望 0x{_expectedCrc:X8}，实际 0x{_hasher.Value:X8}）：" +
-                    "数据损坏，或口令错误（ZipCrypto 无法提前检测口令）", _entryName);
+                    $"CRC check failed (expected 0x{_expectedCrc:X8}, actual 0x{_hasher.Value:X8}): " +
+                    "data is corrupt, or the password is wrong (ZipCrypto cannot detect a wrong password up front)", _entryName);
             }
         }
 

@@ -5,7 +5,7 @@ using GeneralZip.Abstractions;
 
 namespace GeneralZip.Cryptography;
 
-/// <summary>AES 密钥强度。</summary>
+/// <summary>AES key strength.</summary>
 public enum AesKeyStrength
 {
     Bits128 = 1,
@@ -14,9 +14,9 @@ public enum AesKeyStrength
 }
 
 /// <summary>
-/// WinZip AES 加密（APPNOTE extra field 0x9901，AE-2 语义）。
-/// 条目数据布局：[salt][口令校验值2B][AES-CTR 密文][HMAC-SHA1 截断 10B]。
-/// 可被 WinZip / 7-Zip / Windows 资源管理器等主流工具互通。
+/// WinZip AES encryption (APPNOTE extra field 0x9901, AE-2 semantics).
+/// Entry data layout: [salt][2B password verifier][AES-CTR ciphertext][10B truncated HMAC-SHA1].
+/// Interoperable with WinZip / 7-Zip / Windows Explorer and other mainstream tools.
 /// </summary>
 public sealed class WinZipAesProvider : IEncryptionProvider
 {
@@ -30,7 +30,7 @@ public sealed class WinZipAesProvider : IEncryptionProvider
     {
         if (strength == AesKeyStrength.Bits192)
         {
-            throw new NotSupportedException("WinZip AES-192 少见且无增益，本组件仅支持 128/256");
+            throw new NotSupportedException("WinZip AES-192 is rare and offers no benefit; this component supports 128/256 only");
         }
 
         _strength = strength;
@@ -63,7 +63,7 @@ public sealed class WinZipAesProvider : IEncryptionProvider
         Buffer.BlockCopy(keyMaterial, KeyBytes * 2, verify, 0, 2);
         Kdf.Zero(keyMaterial);
 
-        // extra field 数据区：version(AE-2) | vendor "AE" | strength | 真实压缩方法
+        // extra field data: version (AE-2) | vendor "AE" | strength | real compression method
         var extra = new byte[7];
         extra[0] = 0x02;
         extra[1] = 0x00;
@@ -74,7 +74,7 @@ public sealed class WinZipAesProvider : IEncryptionProvider
         extra[6] = (byte)((context.RealCompressionMethod >> 8) & 0xFF);
 
         var overhead = SaltBytes + 2 + AuthCodeLength;
-        // WinZip 约定：128 位小端计数器，自 1 起（与 WinZip/7-Zip/SharpZipLib 互通）
+        // WinZip convention: 128-bit little-endian counter starting at 1
         var zeroIv = new byte[16];
 
         return new EntryEncryptionPlan(
@@ -95,29 +95,29 @@ public sealed class WinZipAesProvider : IEncryptionProvider
     {
         if (!context.Parameters.TryGetValue("ZipExtraFieldData", out var raw) || raw is not byte[] extra || extra.Length < 7)
         {
-            throw new ArchiveCorruptedException("缺少 WinZip AES extra field", context.EntryName);
+            throw new ArchiveCorruptedException("WinZip AES extra field is missing", context.EntryName);
         }
 
         var strengthCode = extra[4];
         if ((strengthCode == 1 && KeyBytes != 16) || (strengthCode == 3 && KeyBytes != 32))
         {
             throw new UnsupportedFormatException(
-                $"条目为 WinZip AES-{(strengthCode == 1 ? 128 : 256)}，当前提供者 {AlgorithmId} 强度不匹配", context.EntryName);
+                $"Entry is WinZip AES-{(strengthCode == 1 ? 128 : 256)} which does not match provider {AlgorithmId}", context.EntryName);
         }
 
         if (context.CipherDataSize >= 0 && context.CipherDataSize < SaltBytes + 2 + AuthCodeLength)
         {
-            throw new ArchiveCorruptedException("WinZip AES 密文数据长度不足", context.EntryName);
+            throw new ArchiveCorruptedException("WinZip AES ciphertext data is too short", context.EntryName);
         }
 
         var payloadLength = context.CipherDataSize - SaltBytes - 2 - AuthCodeLength;
         return WinZipAesReadStream.Create(cipherSource, context.Password, payloadLength, context.EntryName, KeyBytes, SaltBytes, AuthCodeLength);
     }
 
-    /// <summary>读侧流：消费 [salt][verify2][ciphertext][auth10]。</summary>
+    /// <summary>Read-side stream consuming [salt][verify2][ciphertext][auth10].</summary>
     private sealed class WinZipAesReadStream : CtrReadStream
     {
-        private WinZipAesReadStream(Stream source, CtrCipher cipher, IncrementalMac mac, long payloadLength, int trailerLength)
+        private WinZipAesReadStream(Stream source, CtrCipher cipher, HmacSha1Incremental mac, long payloadLength, int trailerLength)
             : base(source, cipher, mac, payloadLength, trailerLength: trailerLength)
         {
         }
@@ -125,13 +125,13 @@ public sealed class WinZipAesProvider : IEncryptionProvider
         public static WinZipAesReadStream Create(
             Stream source, string password, long payloadLength, string entryName, int keyBytes, int saltBytes, int trailerLength)
         {
-            // 1) 读取盐与口令校验值
+            // 1) read salt + password verifier
             var salt = new byte[saltBytes];
             ReadExactly(source, salt);
             var verifyStored = new byte[2];
             ReadExactly(source, verifyStored);
 
-            // 2) 派生密钥并校验口令（快速失败）
+            // 2) derive keys and verify the password (fast fail)
             var keyMaterial = Kdf.Pbkdf2Sha1(password, salt, Iterations, (keyBytes * 2) + 2);
             var keyEnc = new byte[keyBytes];
             var keyMac = new byte[keyBytes];
@@ -146,9 +146,10 @@ public sealed class WinZipAesProvider : IEncryptionProvider
                 throw new InvalidPasswordException(entryName);
             }
 
-            // 3) CTR（WinZip 小端计数器自 1 起）+ HMAC-SHA1
-            var zeroIv = new byte[16];
-            var cipher = new CtrCipher(new AesBlockCipher(keyEnc), keyEnc, zeroIv, littleEndian: true);
+            // 3) CTR (WinZip little-endian counter starting at 1) + HMAC-SHA1
+            var counterStart = new byte[16];
+            counterStart[0] = 1;
+            var cipher = new CtrCipher(new AesBlockCipher(keyEnc), keyEnc, counterStart, littleEndian: true);
             var mac = Kdf.CreateIncrementalHmacSha1(keyMac);
             return new WinZipAesReadStream(source, cipher, mac, payloadLength, trailerLength);
         }
@@ -161,7 +162,7 @@ public sealed class WinZipAesProvider : IEncryptionProvider
                 var n = source.Read(buffer, total, buffer.Length - total);
                 if (n <= 0)
                 {
-                    throw new ArchiveCorruptedException("WinZip AES 头部（盐/校验值）不完整");
+                    throw new ArchiveCorruptedException("WinZip AES header (salt/verifier) is incomplete");
                 }
 
                 total += n;

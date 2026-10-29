@@ -73,7 +73,7 @@ internal static class ZipStructure
     public static (List<ZipCentralEntry> entries, string? archiveComment) ReadCentralDirectory(Stream stream)
     {
         var eocd = FindEndOfCentralDirectory(stream)
-                   ?? throw new ArchiveCorruptedException("未找到 ZIP 结束记录（EOCD）：文件损坏或非 ZIP 归档");
+                   ?? throw new ArchiveCorruptedException("ZIP end of central directory (EOCD) not found: file is corrupt or not a ZIP archive");
 
         long totalEntries = eocd.TotalEntries;
         long cdSize = eocd.CentralDirectorySize;
@@ -97,7 +97,7 @@ internal static class ZipStructure
 
         if (cdOffset < 0 || stream.Length < cdOffset + cdSize)
         {
-            throw new ArchiveCorruptedException("中央目录偏移越界");
+            throw new ArchiveCorruptedException("Central directory offset out of bounds");
         }
 
         stream.Position = cdOffset;
@@ -114,7 +114,7 @@ internal static class ZipStructure
         var sig = Le.ReadU32(stream);
         if (sig != ZipConstants.CentralHeaderSignature)
         {
-            throw new ArchiveCorruptedException($"中央目录条目签名错误：0x{sig:X8}");
+            throw new ArchiveCorruptedException($"Invalid central directory entry signature: 0x{sig:X8}");
         }
 
         var entry = new ZipCentralEntry();
@@ -187,7 +187,7 @@ internal static class ZipStructure
             pos += size;
         }
 
-        throw new ArchiveCorruptedException("存在 Zip64 标记但缺少 Zip64 extra field");
+        throw new ArchiveCorruptedException("Zip64 marker present but Zip64 extra field is missing");
     }
 
     private sealed class Eocd
@@ -260,13 +260,13 @@ internal static class ZipStructure
         var zip64EocdOffset = (long)Le.ReadU64(stream);
         if (zip64EocdOffset < 0 || stream.Length < zip64EocdOffset + 56)
         {
-            throw new ArchiveCorruptedException("Zip64 EOCD 偏移越界");
+            throw new ArchiveCorruptedException("Zip64 EOCD offset out of bounds");
         }
 
         stream.Position = zip64EocdOffset;
         if (Le.ReadU32(stream) != ZipConstants.Zip64EndOfCentralDirectorySignature)
         {
-            throw new ArchiveCorruptedException("Zip64 EOCD 签名错误");
+            throw new ArchiveCorruptedException("Invalid Zip64 EOCD signature");
         }
 
         Le.ReadU64(stream); // size of record
@@ -289,7 +289,7 @@ internal static class ZipStructure
         if (sig != ZipConstants.LocalHeaderSignature)
         {
             throw new ArchiveCorruptedException(
-                $"Local header 签名错误（0x{sig:X8}）：归档损坏或条目偏移越位");
+                $"Invalid local header signature (0x{sig:X8}): archive is corrupt or the entry offset is misaligned");
         }
 
         Le.ReadU16(stream); // version needed

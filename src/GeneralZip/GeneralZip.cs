@@ -112,7 +112,7 @@ public static class GeneralZip
         }
         else
         {
-            throw new FileNotFoundException("源路径不存在", sourcePath);
+            throw new FileNotFoundException("Source path does not exist", sourcePath);
         }
 
         await writer.FinishAsync(cancellationToken).ConfigureAwait(false);

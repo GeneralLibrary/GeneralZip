@@ -19,7 +19,7 @@ public sealed class RarNativeFormat : IArchiveFormat
         "RAR",
         new[] { ".rar" },
         FormatCapabilities.Read | FormatCapabilities.EncryptedRead | FormatCapabilities.SeekableRead,
-        "RAR4/RAR5 读取（Rust 原生核心；加密解密支持）");
+        "RAR4/RAR5 read (Rust native core; password decryption supported)");
 
     public bool MatchesSignature(Stream stream)
     {
@@ -63,7 +63,7 @@ public sealed class RarNativeFormat : IArchiveFormat
 
     public IArchiveWriter OpenWrite(Stream stream, ArchiveWriteOptions options)
     {
-        throw new NotSupportedException("RAR 为专有压缩格式，仅支持读取（任何合规库均无法创建 RAR）");
+        throw new NotSupportedException("RAR is a proprietary compression format and read-only (no compliant library can create RAR archives)");
     }
 }
 
@@ -102,7 +102,7 @@ internal sealed class RarNativeReader : IArchiveReader
     public ArchiveFormatInfo Format { get; } = new(
         "RAR", new[] { ".rar" },
         FormatCapabilities.Read | FormatCapabilities.EncryptedRead | FormatCapabilities.SeekableRead,
-        "RAR（原生核心）");
+        "RAR (native core)");
 
     public IReadOnlyList<IArchiveEntry> Entries
     {
@@ -130,7 +130,7 @@ internal sealed class RarNativeReader : IArchiveReader
     {
         if (_entries == null || !TryIndexOf(entry, out var index))
         {
-            throw new ArgumentException("条目不属于当前归档", nameof(entry));
+            throw new ArgumentException("Entry does not belong to this archive", nameof(entry));
         }
 
         var password = PasswordResolver.Resolve(_options, entry.FullName);
@@ -143,7 +143,7 @@ internal sealed class RarNativeReader : IArchiveReader
         if (status != GzpNative.GzpOk)
         {
             SevenZipNativeReader.TryDelete(tempFile);
-            throw NativeCall.ToException(status, "RAR 条目解压失败", entry.FullName);
+            throw NativeCall.ToException(status, "RAR entry extraction failed", entry.FullName);
         }
 
         return new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read, 65536,

@@ -57,7 +57,7 @@ public sealed class ZipCryptoProvider : IEncryptionProvider
         }
         else
         {
-            throw new ArgumentException("ZipCrypto 需要 Crc32 或 DosTime 之一以计算头校验字节", nameof(context));
+            throw new ArgumentException("ZipCrypto requires either Crc32 or DosTime to compute the header check byte", nameof(context));
         }
 
         return new EntryEncryptionPlan(
@@ -84,7 +84,7 @@ public sealed class ZipCryptoProvider : IEncryptionProvider
 
         if (candidates.Count == 0)
         {
-            throw new ArchiveCorruptedException("缺少 ZipCrypto 校验字节所需参数", context.EntryName);
+            throw new ArchiveCorruptedException("Parameters required for the ZipCrypto check byte are missing", context.EntryName);
         }
 
         var overhead = context.Parameters.TryGetValue("ZipCryptoHeaderSize", out var hs) && hs is int h ? h : 12;
@@ -199,7 +199,7 @@ public sealed class ZipCryptoReadStream : Stream
             var n = source.Read(header, total, header.Length - total);
             if (n <= 0)
             {
-                throw new ArchiveCorruptedException("ZipCrypto 加密头不完整", entryName);
+                throw new ArchiveCorruptedException("ZipCrypto encryption header is incomplete", entryName);
             }
 
             total += n;
@@ -249,7 +249,7 @@ public sealed class ZipCryptoReadStream : Stream
         var n = _source.Read(buffer, offset, toRead);
         if (n <= 0)
         {
-            throw new ArchiveCorruptedException("ZipCrypto 密文数据意外截断", _entryName);
+            throw new ArchiveCorruptedException("ZipCrypto ciphertext data unexpectedly truncated", _entryName);
         }
 
         for (var i = 0; i < n; i++)
