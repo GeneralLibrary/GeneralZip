@@ -42,6 +42,13 @@ fn main() {
         std::process::exit(1);
     };
 
+    // 纵深防御：拒绝控制字符与引号/元字符，保证子进程参数不可能被二次解析
+    assert_safe_argument("-d", &def_in);
+    assert_safe_argument("-l", &out_lib);
+    if let Some(dll) = &dll_name {
+        assert_safe_argument("-D", dll);
+    }
+
     // def 文件确保有 LIBRARY 行（lld-link 需要）；必要时写 patched 副本
     let mut def_path = PathBuf::from(&def_in);
     let def_text = fs::read_to_string(&def_path).unwrap_or_default();
@@ -110,4 +117,22 @@ fn find_rust_lld() -> Option<PathBuf> {
     }
 
     None
+}
+
+/// 纵深防御：拒绝控制字符与引号/shell 元字符（合法路径不含这些字符；
+/// 路径分隔符 / 与 \ 不受影响）。本工具经 Command 逐参数传递、不经 shell，
+/// 本不存在注入；此校验进一步保证任何参数字符都无法改变子进程参数边界。
+fn assert_safe_argument(option: &str, value: &str) {
+    for ch in value.chars() {
+        let is_forbidden = ch.is_control()
+            || matches!(
+                ch,
+                '"' | '\'' | '`' | '$' | '|' | '&' | ';' | '<' | '>' | '%' | '*'
+                    | '?' | '!' | '(' | ')' | '{' | '}'
+            );
+        if is_forbidden {
+            eprintln!("gzdlltool: 参数 {option} 含非法字符 {ch:?}，已拒绝执行");
+            std::process::exit(1);
+        }
+    }
 }
