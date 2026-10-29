@@ -1,146 +1,225 @@
+<div align="center">
+
 # GeneralZip
 
-<div align="right">
+**A cross-format, encryption-capable (SM4/Guomi included), event-driven compression library for .NET**
 
-[**中文**](README.zh-CN.md) | [English](README.en.md)
+[![CI](https://github.com/GeneralLibrary/GeneralZip/actions/workflows/ci.yml/badge.svg)](https://github.com/GeneralLibrary/GeneralZip/actions/workflows/ci.yml)
+[![Release](https://github.com/GeneralLibrary/GeneralZip/actions/workflows/release.yml/badge.svg)](https://github.com/GeneralLibrary/GeneralZip/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-netstandard2.0%20%7C%20net8.0-blueviolet)](https://learn.microsoft.com/dotnet/standard/net-standard)
+
+[**English**](README.md) | [中文](README.zh-CN.md)
 
 </div>
 
-跨格式、可加密（含国密）、事件驱动的 .NET 压缩组件。
+---
+
+## Why GeneralZip?
+
+- **One API, many formats** — ZIP, 7z, RAR, TAR, GZ, BZ2, XZ, Zstd, LZ4 with automatic magic-byte detection. No more "which library do I need for this file?"
+- **Encryption done right** — WinZip AES for universal interop, plus **SM4-GM** (Chinese national cryptography) as a documented custom ZIP extension, all behind one `EncryptionAlgorithm` switch.
+- **Built for apps, not just scripts** — full event system (progress, interactive password prompts, overwrite decisions, error policies), `CancellationToken` everywhere, `IProgress<T>` support.
+- **Zero third-party NuGet dependencies in the core** — cryptographic primitives (SM3/SM4) and the TAR container are pure C# implementations validated against GB/T standard test vectors; native codecs (7z/bzip2/xz/zstd/lz4) live in an optional Rust native core, all pure Rust.
+
+## Installation
+
+```
+dotnet add package GeneralZip          # core (pure managed)
+dotnet add package GeneralZip.Native   # optional: 7z/RAR/BZ2/XZ/ZSTD/LZ4 via Rust core
+```
+
+Targets `netstandard2.0` and `net8.0`.
+
+> The native package embeds prebuilt cores for win-x64, linux-x64, linux-musl-x64, osx-x64 and osx-arm64.
+> Call `GeneralZipNative.Initialize()` once at startup — if the core is missing for your platform,
+> 7z/RAR and those codecs degrade gracefully; everything else keeps working.
+
+## Quick Start
+
+### Compress / extract in one line
 
 ```csharp
-// 启动引导（幂等）+ 一行式：压缩 / 解压 / 测试
-GeneralZip.Initialize();
-await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip",
-    o => { o.Level = CompressionLevelChoice.Optimal;
-           o.EncryptionAlgorithm = "SM4-GM";       // 国密加密
-           o.Password = "强口令-从密钥管理获取"; });
+using GeneralZip;
 
-await GeneralZip.ExtractAsync(@"D:\backup.zip", @"D:\restore");
+GeneralZip.Initialize();  // idempotent bootstrap
 
-// 事件驱动 + 流式
-using var reader = ArchiveReader.Open(@"D:\arch.7z", o => o.Password = "...", r =>
+// Directory → archive (format is chosen by the file extension)
+await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip");
+
+// Archive → directory
+var result = await GeneralZip.ExtractAsync(@"D:\backup.zip", @"D:\restore");
+Console.WriteLine($"Extracted {result.ProcessedCount} entries, {result.FailedCount} failed");
+```
+
+### Encrypted archives
+
+```csharp
+using GeneralZip;
+using GeneralZip.Abstractions;
+
+// Write: SM4-GM (Chinese national crypto) — see docs/CRYPTO-SPEC.md
+await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip", o =>
 {
-    r.PasswordRequired += (_, e) => e.Password = AskUser();   // 交互取密
-    r.OverallProgress  += (_, p) => ShowProgress(p);          // 进度/速度/ETA
+    o.Level = CompressionLevelChoice.Optimal;
+    o.EncryptionAlgorithm = "SM4-GM";          // or "WinZipAES256" for universal interop
+    o.Password = password;                     // get it from your secret store, never hard-code
+    o.KdfIterations = 10_000;                  // SM3-PBKDF2 rounds
 });
-await reader.ExtractToDirectoryAsync(@"D:\out");
+
+// Read: wrong passwords fail fast (per-entry verifier), no silent corruption
+using var reader = ArchiveReader.Open(@"D:\backup.zip", o => o.Password = password);
+var entry = reader.Entries[0];
+using var stream = reader.OpenEntryStream(entry);   // lazy decrypt + decompress stream
 ```
 
-> 引导类与组件同名（`namespace GeneralZip` 中的 `class GeneralZip`）。
-> 推荐写法 `using GeneralZip;` + `using static GeneralZip.GeneralZip;`，即可裸调用 `Initialize()` / `CompressAsync()` 等。
-
-## 特性
-
-| 能力 | 说明 |
-|---|---|
-| 广格式 | ZIP / 7z / RAR / TAR / TAR.GZ / TAR.BZ2 / GZ / BZ2 / XZ / Zstd / LZ4 |
-| 加密矩阵 | ZipCrypto、**WinZip AES-128/256**（通用互通）、**SM4-GM 国密**（自研规范）、7z AES-256、RAR（读） |
-| 国密方案 | SM3-PBKDF2 派生 + SM4-CTR + SM3-HMAC（Encrypt-then-MAC），二进制规范见 [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) |
-| 事件系统 | 条目级进度、总进度（速度/ETA）、`PasswordRequired` 协商（重试计数/缓存）、`OverwriteQuery`、`ErrorReport`（重试/跳过/中止） |
-| 编码友好 | 一行式门面 + 流式 API、全 `CancellationToken`、`IProgress<T>`、`netstandard2.0` + `net8.0` 双目标 |
-| 可插拔 | `IArchiveFormat` / `IEncryptionProvider` 均可第三方注册扩展 |
-| 安全默认 | zip-slip 防护、ZipCrypto 写入默认禁用（显式开启）、HMAC 篡改必拒、错误口令快速失败、常数时间比较 |
-
-## 格式与加密矩阵
-
-| 格式 | 读 | 写 | 加密读 | 加密写 |
-|---|---|---|---|---|
-| ZIP（Store/Deflate/Zip64） | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** | 同左 |
-| 7z（LZMA2） | ✓ | ✓ | AES-256 | AES-256 |
-| RAR4/RAR5 | ✓ | —（专有） | ✓ 密码 | — |
-| TAR / TAR.GZ | ✓ | ✓ | — | — |
-| GZ | ✓（.NET 内置） | ✓（.NET 内置） | — | — |
-| BZ2 / XZ / ZSTD / LZ4 | ✓（原生核心） | ✓（原生核心） | — | — |
-
-> 7z/RAR 与 BZ2/XZ/ZSTD/LZ4 由 **Rust 原生核心**提供（全部纯 Rust 实现）。核心缺失时优雅降级：ZIP/TAR/TAR.GZ/GZ（纯托管）与全部 ZIP 系加密不受影响。
-
-## 构建与测试
-
-```powershell
-.\build\build.ps1              # Rust 原生核心 + 托管 + 全部测试
-.\build\build.ps1 -SkipNative  # 仅托管部分（7z/RAR/xz写 将不可用）
-```
-
-前置要求：
-- .NET SDK 8.0+（多目标 netstandard2.0 + net8.0）
-- Rust（仅原生核心需要）：建议 GNU 工具链 + 国内镜像
-  ```powershell
-  $env:RUSTUP_DIST_SERVER="https://rsproxy.cn"; $env:RUSTUP_UPDATE_ROOT="https://rsproxy.cn/rustup"
-  rustup-init.exe -y --default-toolchain stable-x86_64-pc-windows-gnu --profile minimal
-  ```
-- RAR 支持（`rar` cargo feature）：额外需要 C++ 工具链（MSVC），默认关闭
-
-原生核心部署（应用侧）：将 `generalzip_native.dll/.so/.dylib` 放到应用目录、
-`runtimes/<RID>/native/`，或设置 `GENERALZIP_NATIVE` 环境变量；启动时调用
-`GeneralZipNative.Initialize()` 一次即可。
-
-## 使用示例
-
-完整可运行示例见 [samples/GeneralZip.Samples](samples/GeneralZip.Samples/Program.cs)，覆盖：
-一行式压缩、国密加密往返、事件驱动（进度/密码/错误策略）、7z 加密读写、xz 编解码、完整性测试。
-
-### API 速览
+### Streaming API with events
 
 ```csharp
-// 打开 + 格式自动探测（魔数优先）
-using var reader = ArchiveReader.Open(path);
-foreach (var entry in reader.Entries) { /* FullName/Size/IsEncrypted/... */ }
-using Stream s = reader.OpenEntryStream(entry);        // 惰性解压流
+using GeneralZip;
+using GeneralZip.Abstractions;
 
-// 解压策略
-var result = reader.ExtractToDirectory(dest, new ExtractionOptions {
-    OverwritePolicy = OverwritePolicy.Ask,             // 触发 OverwriteQuery
-    ErrorPolicy     = ErrorPolicy.RaiseEvent,          // 触发 ErrorReport
-    Filter          = e => e.FullName.EndsWith(".pdf"),
-});
-
-// 写入（顺序 API，支持不可寻址流）
-using var writer = ArchiveWriter.CreateNew(outPath, o =>
+// Create an archive with progress reporting
+using var writer = ArchiveWriter.CreateNew(@"D:\photos.zip", o =>
 {
     o.Level = CompressionLevelChoice.SmallestSize;
-    o.EncryptionAlgorithm = "WinZipAES256";
-    o.Password = password;
+    o.Progress = new Progress<ArchiveProgress>(p =>
+        Console.Write($"\r{p.Percent:F0}% {p.CurrentEntry}"));
 });
 writer.AddFile(@"C:\a.pdf", "docs/a.pdf");
-writer.AddDirectory(@"C:\photos", "photos");
-await writer.FinishAsync();                            // Dispose 未 Finish 时自动收尾
+await writer.AddDirectoryAsync(@"C:\photos", "photos");
+await writer.FinishAsync();     // auto-finalized on Dispose too
+```
 
-// 扩展点：注册自定义格式 / 加密算法
+```csharp
+// Extract with interactive password, overwrite and error handling
+using var reader = ArchiveReader.Open(archivePath, configure: null, r =>
+{
+    // For whole-archive formats (e.g. 7z header encryption) subscribe here —
+    // the password may be needed during Open itself.
+    r.PasswordRequired += (_, e) =>
+    {
+        e.Password = PromptPassword(e.EntryName, e.Attempt);   // your UI logic
+        if (e.Attempt >= 3) e.Cancel = true;                   // give up after 3 tries
+    };
+    r.OverallProgress += (_, p) => UpdateProgressBar(p.Percent, p.Eta);
+});
+
+var result = reader.ExtractToDirectory(@"D:\out", new ExtractionOptions
+{
+    OverwritePolicy = OverwritePolicy.Ask,      // raises reader.OverwriteQuery
+    ErrorPolicy = ErrorPolicy.RaiseEvent,       // raises reader.ErrorReport (retry/skip/abort)
+    Filter = e => e.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase),
+});
+```
+
+### Integrity testing
+
+```csharp
+// Works without a password for plain archives; supply one for encrypted archives
+using var testReader = ArchiveReader.Open(path, o => o.Password = password);
+var test = testReader.TestAll();
+Console.WriteLine(test.Success ? "OK" : $"{test.FailedCount} entries failed");
+```
+
+### Format detection & extensibility
+
+```csharp
+var info = GeneralZip.DetectFormat(mysteryFile);    // magic bytes first, extension fallback
+Console.WriteLine(info?.Name);                      // "ZIP", "7Z", "TAR.GZ", ...
+
+// Register a custom format or encryption algorithm
 GeneralZip.Registry.Register(new MyArchiveFormat());
 GeneralZip.Encryption.Register(new MyEncryptionProvider());
 ```
 
-## 架构文档与基准
+## Format & Encryption Matrix
 
-> 🌐 文档语言（i18n）：详细设计文档目前仅提供中文；英文 README 为功能与使用概览。
+| Format | Read | Write | Encrypted Read | Encrypted Write |
+|---|:---:|:---:|:---:|:---:|
+| ZIP (Store/Deflate/Zip64) | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** | ✓ |
+| 7z (LZMA2) | ✓ | ✓ | AES-256 | AES-256 |
+| RAR4/RAR5 | ✓ | — (proprietary) | ✓ password | — |
+| TAR / TAR.GZ | ✓ | ✓ | — | — |
+| GZ | ✓ (.NET built-in) | ✓ (.NET built-in) | — | — |
+| BZ2 / XZ / ZSTD / LZ4 | ✓ (native core) | ✓ (native core) | — | — |
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) —— 分层架构、接口契约、事件协议、Rust FFI 设计、扩展指南
-- [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) —— 国密 SM4-GM 加密 ZIP 容器二进制规范（第三方互通实现依据）
-- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) —— 全格式压缩/解压吞吐基准（含加密开销对比），由 `samples/GeneralZip.Bench` 生成
-- [samples/fixtures/](samples/fixtures/README.md) —— 加密示例文件（SM4-GM / WinZip AES / ZipCrypto / 7z AES，含口令与 SHA-256 校验值），并作为跨版本兼容性回归锚点
+> 7z/RAR and BZ2/XZ/ZSTD/LZ4 are provided by the **Rust native core** (all pure-Rust crates).
+> When the core is missing, the library degrades gracefully: ZIP/TAR/TAR.GZ/GZ (pure managed)
+> and all ZIP-family encryption are unaffected.
 
-## 依赖与许可
+## Building from Source
 
-**核心包零第三方 NuGet 依赖**——除微软官方维护的包外，不引用任何第三方 NuGet：
+```powershell
+.\build\build.ps1              # Rust native core + managed build + all tests
+.\build\build.ps1 -SkipNative  # managed only (7z/RAR and the native codecs unavailable)
+```
 
-| 组件 | 用途 | 维护方 |
-|---|---|---|
-| System.IO.Compression / System.Security.Cryptography | Deflate、GZip 容器、AES、SHA1、PBKDF2-SHA1 | 微软官方 |
-| SM3 / SM4 / HMAC-SM3 / PBKDF2-SM3 / TAR(ustar) / CRC32 | 本组件纯 C# 自研实现（GB/T 标准向量锁定） | GeneralZip |
-| Microsoft.Bcl.AsyncInterfaces | netstandard2.0 异步 API 填充 | 微软官方 |
-| Rust 原生核心：sevenz-rust2 / lzma-rs / lzma_rust2 / bzip2(libbz2-rs) / lz4_flex / rust-zstd | 7z、xz、bzip2、lz4、zstd 编解码 | Rust 社区（各依上游） |
+Prerequisites:
+- .NET SDK 8.0+
+- Rust (native core only) — GNU toolchain on Windows:
+  ```powershell
+  rustup-init.exe -y --default-toolchain stable-x86_64-pc-windows-gnu --profile minimal
+  ```
+- RAR support (`rar` cargo feature): additionally requires MSVC; off by default
 
-非压缩类密码学原语（SM3/SM4/国密 HMAC）为纯 C# 自研并经 GB/T 标准向量锁定；
-压缩 codecs（bzip2/xz/zstd/lz4/7z）集中于 Rust 原生核心，全部为纯 Rust 实现（无 C 工具链依赖）。
+### Deploying the native core manually
 
-本项目代码 MIT。
+Place `generalzip_native.dll/.so/.dylib` in one of:
+1. the application directory,
+2. `runtimes/<RID>/native/` under the app directory,
+3. any path referenced by the `GENERALZIP_NATIVE` environment variable,
 
-## 已知限制（v1.1）
+then call `GeneralZipNative.Initialize()` once at startup.
 
-- RAR 仅读取（WinRAR 压缩算法专有，任何合规实现均无法创建）
-- 7z 归档不支持向既有包追加（每次创建为整包写入）
-- SM4-GM 为自定义规范（ZIP 无官方 SM4 标准），互通限于本组件与按规范实现的第三方
-- **BZ2 / XZ / ZSTD / LZ4 编解码依赖原生核心**：核心缺失时这些格式不可用（ZIP/TAR/GZ/7z/RAR 不受影响）；GZip 为 .NET 内置实现，始终可用
-- 原生 zstd 压缩为一次性内存 API（大文件压缩占用与源文件等量内存）；xz/lz4/bzip2 为流式
-- 读取加密 7z/大文件时逐条目解压到临时文件（支持随机访问语义；顺序大批量解压后续版本提供批处理路径）
+## Sample Files
+
+[samples/fixtures/](samples/fixtures/README.md) ships sample archives for **every supported format**
+(10 plaintext + 4 encrypted variants) with the public demo password and plaintext SHA-256 checksums.
+These are also cross-version compatibility anchors verified by the test suite.
+
+## Benchmarks
+
+Throughput numbers for all formats (including per-algorithm encryption overhead), measured by
+[samples/GeneralZip.Bench](samples/GeneralZip.Bench/Program.cs): [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+## Documentation
+
+| Document | Content |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layered architecture, interface contracts, event protocol, Rust FFI design (Chinese) |
+| [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) | Binary spec of the SM4-GM encrypted ZIP container for third-party interop (Chinese) |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Full-format performance data (Chinese) |
+| [samples/](samples/) | Runnable samples: basic usage, events, benchmarks, fixture generator |
+
+## Project Layout
+
+```
+src/GeneralZip/           Core library (pure managed, zero third-party NuGet)
+src/GeneralZip.Native/    Rust core bindings (P/Invoke, graceful degradation)
+native/generalzip-native/ Rust cdylib: 7z/bzip2/xz/zstd/lz4 codecs (C ABI)
+native/dlltool-shim-rs/   Build helper for windows-gnu raw-dylib imports
+tests/                    73 tests: standard vectors, interop oracle, events, fixtures
+samples/                  Samples + sample archives (fixtures)
+build/                    One-shot build script
+```
+
+## Known Limitations
+
+- RAR is **read-only** — the compression algorithm is proprietary; no compliant implementation can create RAR archives.
+- 7z archives cannot be appended to (each write produces a whole new archive).
+- SM4-GM is a custom specification (ZIP has no official SM4 standard); interop is limited to this library and third parties implementing the same spec.
+- BZ2/XZ/ZSTD/LZ4 require the native core; GZip is always available (pure managed).
+- Native zstd compression is a one-shot in-memory API; xz/lz4/bzip2 stream.
+
+## Contributing & License
+
+Issues and PRs are welcome. Please run `build\build.ps1` and make sure all tests pass before submitting.
+
+Released under the [MIT License](LICENSE).
+
+<div align="right">
+
+[**English**](README.md) | [中文](README.zh-CN.md)
+
+</div>

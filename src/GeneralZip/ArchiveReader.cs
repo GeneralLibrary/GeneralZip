@@ -17,6 +17,7 @@ namespace GeneralZip;
 public sealed class ArchiveReader : IDisposable
 {
     private IArchiveReader _inner;
+    private FileStream? _ownedStream; // set when opened by path; closed on Dispose
     private readonly ArchiveOpenOptions _options;
     private readonly PasswordGate _passwords;
     private EventHandler<PasswordRequiredEventArgs>? _passwordRequired;
@@ -58,11 +59,13 @@ public sealed class ArchiveReader : IDisposable
         {
             reader = new ArchiveReader(options);
             AttachCore(reader, stream, options, initialize, registry, path, formatName: null);
+            // Opening by path: the reader owns the FileStream. Format readers are created
+            // with ownsStream:false, so the facade must close the stream on Dispose.
+            reader._ownedStream = stream;
             return reader;
         }
         catch
         {
-            // AttachCore 成功后 reader 拥有 stream；失败时 reader 尚持有占位内核，需自行释放流
             reader?.Dispose();
             stream.Dispose();
             throw;
@@ -602,7 +605,12 @@ public sealed class ArchiveReader : IDisposable
         }
     }
 
-    public void Dispose() => _inner.Dispose();
+    public void Dispose()
+    {
+        _inner.Dispose();
+        _ownedStream?.Dispose();
+        _ownedStream = null;
+    }
 
     /// <summary>条目内字节进度中继：聚合器 + EntryProgress 事件。</summary>
     private sealed class EntryProgressRelay
