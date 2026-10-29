@@ -1,0 +1,14 @@
+[package]
+name = "gzdlltool"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "dlltool 垫片：把 rustc 的 GNU dlltool 调用转译为 rust-lld（lld-link /DEF 模式）"
+
+[[bin]]
+name = "gzdlltool"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+strip = true

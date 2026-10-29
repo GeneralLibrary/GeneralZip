@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>GeneralZip.Samples</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
+    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
+  </ItemGroup>
+
+  <!-- 本地构建时携带 cargo 产物（存在才拷贝；缺失时示例自动降级为纯托管演示） -->
+  <ItemGroup>
+    <Content Include="..\..\native\generalzip-native\target\release\generalzip_native.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Visible="false"
+             Condition="Exists('..\..\native\generalzip-native\target\release\generalzip_native.dll')" />
+  </ItemGroup>
+
+</Project>

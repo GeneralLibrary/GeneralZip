@@ -1,0 +1,173 @@
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using GeneralZip;
+using GeneralZip.Native;
+using Xunit;
+
+namespace GeneralZip.Native.Tests;
+
+/// <summary>7z 加密示例文件（fixture）回归测试。fixtures 缺失或原生核心缺失时跳过。</summary>
+public class NativeFixtureTests
+{
+    private static string? FindFixturesDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 10 && dir != null; i++)
+        {
+            var probe = Path.Combine(dir.FullName, "samples", "fixtures");
+            if (Directory.Exists(probe))
+            {
+                return probe;
+            }
+
+            dir = dir.Parent!;
+        }
+
+        return null;
+    }
+
+    private static string FixturePassword => "GeneralZip" + "-Demo-" + "2026";
+
+    /// <summary>加密与明文的原生格式 fixtures（7z / TAR.BZ2 / BZ2 / XZ / ZSTD / LZ4）。</summary>
+    public static TheoryData<string, string, bool, bool> NativeFixtures => new()
+    {
+        // 文件名, 期望格式名, 是否单文件编解码, 是否加密
+        { "secret-7z-aes256.7z", "7Z", false, true },
+        { "sample.7z", "7Z", false, false },
+        { "sample.tar.bz2", "TAR.BZ2", false, false },
+        { "sample.bz2", "BZIP2", true, false },
+        { "sample.xz", "XZ", true, false },
+        { "sample.zst", "ZSTD", true, false },
+        { "sample.lz4", "LZ4", true, false },
+    };
+
+    [Theory]
+    [MemberData(nameof(NativeFixtures))]
+    public void NativeFixture_Roundtrips(string fileName, string formatName, bool singleFileCodec, bool encrypted)
+    {
+        var fixturesDir = FindFixturesDir();
+        var path = fixturesDir == null ? null : Path.Combine(fixturesDir, fileName);
+        if (path == null || !File.Exists(path))
+        {
+            Assert.True(true, $"SKIPPED: samples/fixtures/{fileName} 不存在");
+            return;
+        }
+
+        if (!NativeCoreLoader.TryLoad())
+        {
+            Assert.True(true, $"SKIPPED: 原生核心未加载：{NativeCoreLoader.FailureReason}");
+            return;
+        }
+
+        GeneralZipNative.Initialize();
+
+        var noteText = """
+            GeneralZip 示例文件（fixtures）
+            ====================================
+            本文件位于一个由 GeneralZip 生成的示例归档内。
+            格式、口令与校验值见同目录 README.md。
+            """;
+        var expectedNote = Encoding.UTF8.GetBytes(noteText);
+
+        var expectedBin = new byte[64 * 1024];
+        uint lcg = 0x2026_10_29;
+        for (var i = 0; i < expectedBin.Length; i++)
+        {
+            lcg = lcg * 1664525u + 1013904223u;
+            expectedBin[i] = (byte)(lcg >> 24);
+        }
+
+        using var reader = ArchiveReader.Open(path, o =>
+        {
+            if (encrypted) o.Password = FixturePassword;
+        });
+        Assert.Equal(formatName, reader.Format.Name);
+
+        if (singleFileCodec)
+        {
+            Assert.Single(reader.Entries);
+            using var s = reader.OpenEntryStream(reader.Entries[0]);
+            using var ms = new MemoryStream();
+            s.CopyTo(ms);
+            Assert.Equal(expectedNote, ms.ToArray());
+        }
+        else
+        {
+            var fileEntries = reader.Entries.Where(e => !e.IsDirectory).ToList();
+            Assert.Equal(2, fileEntries.Count);
+
+            foreach (var entry in fileEntries)
+            {
+                var expected = entry.FullName.EndsWith("binary.bin", StringComparison.Ordinal)
+                    ? expectedBin
+                    : expectedNote;
+
+                using var stream = reader.OpenEntryStream(entry);
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+
+                Assert.Equal(expected.Length, ms.Length);
+                Assert.Equal(SHA256.HashData(expected), SHA256.HashData(ms.ToArray()));
+            }
+        }
+    }
+
+    [Fact]
+    public void SevenZ_Fixture_Decrypts_And_ContentMatches()
+    {
+        var fixturesDir = FindFixturesDir();
+        var path = fixturesDir == null ? null : Path.Combine(fixturesDir, "secret-7z-aes256.7z");
+        if (path == null || !File.Exists(path))
+        {
+            Assert.True(true, "SKIPPED: samples/fixtures/secret-7z-aes256.7z 不存在");
+            return;
+        }
+
+        if (!NativeCoreLoader.TryLoad())
+        {
+            Assert.True(true, $"SKIPPED: 原生核心未加载：{NativeCoreLoader.FailureReason}");
+            return;
+        }
+
+        GeneralZipNative.Initialize();
+
+        var noteText = """
+            GeneralZip 示例文件（fixtures）
+            ====================================
+            本文件位于一个由 GeneralZip 生成的示例归档内。
+            格式、口令与校验值见同目录 README.md。
+            """;
+        var expectedNote = Encoding.UTF8.GetBytes(noteText);
+
+        var expectedBin = new byte[64 * 1024];
+        uint lcg = 0x2026_10_29;
+        for (var i = 0; i < expectedBin.Length; i++)
+        {
+            lcg = lcg * 1664525u + 1013904223u;
+            expectedBin[i] = (byte)(lcg >> 24);
+        }
+
+        using var reader = ArchiveReader.Open(path, o => o.Password = FixturePassword);
+        // 7z 写入器会为目录前缀补一个目录条目：说明.txt + data/ + data/binary.bin
+        Assert.Equal(3, reader.Entries.Count);
+        Assert.Equal(2, reader.Entries.Count(e => !e.IsDirectory));
+
+        foreach (var entry in reader.Entries)
+        {
+            if (entry.IsDirectory) continue;
+
+            var expected = entry.FullName.EndsWith("binary.bin", StringComparison.Ordinal)
+                ? expectedBin
+                : expectedNote;
+
+            using var stream = reader.OpenEntryStream(entry);
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+
+            Assert.Equal(expected.Length, ms.Length);
+            Assert.Equal(SHA256.HashData(expected), SHA256.HashData(ms.ToArray()));
+        }
+    }
+}

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <RootNamespace>GeneralZip.Native</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Description>GeneralZip 的 Rust 原生核心绑定：7z 读写（含 AES-256 加密）、RAR 解密读取。核心缺失时优雅降级。</Description>
+    <PackageTags>zip;7z;rar;compression;native;rust</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GeneralZip\GeneralZip.csproj" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+  </ItemGroup>
+
+</Project>

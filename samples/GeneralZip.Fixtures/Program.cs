@@ -1,0 +1,270 @@
+using System.Security.Cryptography;
+using System.Text;
+using GeneralZip;
+using GeneralZip.Abstractions;
+using GeneralZip.Native;
+using static GeneralZip.GeneralZip;
+
+// =====================================================================
+// 示例文件（fixtures）生成器
+// 产出: samples/fixtures/ 下全部支持格式的样例归档：
+//   - sample-*  ：明文样例（覆盖全部可写格式）
+//   - secret-*  ：加密样例（口令运行时拼接派生，见 DemoPassword）
+// 供用户验证读写能力与回归测试使用，不承载任何真实数据。
+// 用法: dotnet run -c Release
+// =====================================================================
+
+Initialize();                     // 幂等引导（using static 裸调用）
+var nativeOk = GeneralZipNative.Initialize();
+
+var repoRoot = FindRepoRoot();
+Env.FixturesDir = Path.Combine(repoRoot, "samples", "fixtures");
+Directory.CreateDirectory(Env.FixturesDir);
+
+Console.WriteLine($"fixtures 目录: {Env.FixturesDir}");
+Console.WriteLine($"native: {(nativeOk ? "可用" : "缺失（BZ2/XZ/ZSTD/LZ4/7Z/TAR.BZ2 将跳过）")}");
+Console.WriteLine("明文 SHA-256:");
+foreach (var (name, data) in Entries())
+{
+    Console.WriteLine($"  {name,-20} {Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant()}  ({data.Length}B)");
+}
+
+Console.WriteLine();
+
+// ---------- 明文样例：全部可写格式 ----------
+var plainSpecs = new (string FileName, string Format, bool SingleFileCodec)[]
+{
+    ("sample.zip",      "ZIP",    false),
+    ("sample.7z",       "7Z",     false),
+    ("sample.tar",      "TAR",    false),
+    ("sample.tar.gz",   "TAR.GZ", false),
+    ("sample.tar.bz2",  "TAR.BZ2", false),
+    ("sample.gz",       "GZIP",   true),
+    ("sample.bz2",      "BZIP2",  true),
+    ("sample.xz",       "XZ",     true),
+    ("sample.zst",      "ZSTD",   true),
+    ("sample.lz4",      "LZ4",    true),
+};
+
+Console.WriteLine("━━━ 明文样例（全部可写格式）━━━");
+foreach (var (fileName, format, singleFileCodec) in plainSpecs)
+{
+    if (singleFileCodec && !GeneralZip.Formats.Codecs.NativeBridgeProbe.IsAvailableSafe())
+    {
+        Console.WriteLine($"  跳过 {fileName,-16}（需原生核心）");
+        continue;
+    }
+
+    GeneratePlain(fileName, format, singleFileCodec);
+    VerifyPlain(fileName, format, singleFileCodec);
+}
+
+// ---------- 加密样例：ZIP 三算法 + 7z ----------
+Console.WriteLine();
+Console.WriteLine("━━━ 加密样例 ━━━");
+GenerateEncrypted("secret-sm4.zip", "ZIP", o =>
+{
+    o.EncryptionAlgorithm = "SM4-GM";
+    o.Password = DemoPassword();
+    o.KdfIterations = 10_000;
+});
+Verify("secret-sm4.zip", password: DemoPassword());
+
+GenerateEncrypted("secret-winzipaes256.zip", "ZIP", o =>
+{
+    o.EncryptionAlgorithm = "WinZipAES256";
+    o.Password = DemoPassword();
+});
+Verify("secret-winzipaes256.zip", password: DemoPassword());
+
+GenerateEncrypted("secret-zipcrypto.zip", "ZIP", o =>
+{
+    o.EncryptionAlgorithm = "ZipCrypto";
+    o.Password = DemoPassword();
+    o.AllowWeakZipCrypto = true;
+});
+Verify("secret-zipcrypto.zip", password: DemoPassword());
+
+if (nativeOk)
+{
+    GenerateEncrypted("secret-7z-aes256.7z", "7Z", o => o.Password = DemoPassword());
+    Verify("secret-7z-aes256.7z", password: DemoPassword());
+}
+else
+{
+    Console.WriteLine("  跳过 secret-7z-aes256.7z（需原生核心）");
+}
+
+// RAR：专有格式，组件仅支持读取且无法生成——如需样例请用 WinRAR 自行创建后放入本目录。
+
+Console.WriteLine();
+Console.WriteLine("完成。清单与校验值见 samples/fixtures/README.md");
+
+// ---------- 实现 ----------
+
+/// <summary>演示口令：运行时拼接派生（公开样例文件专用，非真实凭据；
+/// 亦可用环境变量 GENERALZIP_FIXTURE_PASSWORD 覆盖）。</summary>
+static string DemoPassword() =>
+    Environment.GetEnvironmentVariable("GENERALZIP_FIXTURE_PASSWORD")
+    ?? ("GeneralZip" + "-Demo" + "-2026");
+
+static string FixturesDir() => Env.FixturesDir;
+
+static string FindRepoRoot()
+{
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    for (var i = 0; i < 10 && dir != null; i++)
+    {
+        if (File.Exists(Path.Combine(dir.FullName, "GeneralZip.slnx")))
+        {
+            return dir.FullName;
+        }
+
+        dir = dir.Parent!;
+    }
+
+    throw new InvalidOperationException("未找到仓库根目录（GeneralZip.slnx）");
+}
+
+static (string Name, byte[] Data)[] Entries()
+{
+    var noteText = """
+        GeneralZip 示例文件（fixtures）
+        ====================================
+        本文件位于一个由 GeneralZip 生成的示例归档内。
+        格式、口令与校验值见同目录 README.md。
+        """;
+    var noteBytes = Encoding.UTF8.GetBytes(noteText);
+
+    var binBytes = new byte[64 * 1024];
+    uint lcg = 0x2026_10_29;
+    for (var i = 0; i < binBytes.Length; i++)
+    {
+        lcg = lcg * 1664525u + 1013904223u;
+        binBytes[i] = (byte)(lcg >> 24);
+    }
+
+    return new (string, byte[])[]
+    {
+        ("说明.txt", noteBytes),
+        ("data/binary.bin", binBytes),
+    };
+}
+
+/// <summary>单文件编解码格式（GZ/BZ2/XZ/ZSTD/LZ4）的负载：与其他归档相同的说明文本，便于统一校验。</summary>
+static byte[] SingleFilePayload() => Entries()[0].Data;
+
+static void GeneratePlain(string fileName, string format, bool singleFileCodec)
+{
+    var path = Path.Combine(Env.FixturesDir, fileName);
+    using (var writer = ArchiveWriter.CreateNew(path, formatName: format))
+    {
+        if (singleFileCodec)
+        {
+            writer.AddStream(fileName, new MemoryStream(SingleFilePayload()), SingleFilePayload().Length);
+        }
+        else
+        {
+            foreach (var (name, data) in Entries())
+            {
+                writer.AddStream(name, new MemoryStream(data), data.Length);
+            }
+        }
+
+        writer.Finish();
+    }
+
+    Console.WriteLine($"  生成 {fileName,-16} {new FileInfo(path).Length,8}B  [{format}]");
+}
+
+static void VerifyPlain(string fileName, string format, bool singleFileCodec)
+{
+    var path = Path.Combine(Env.FixturesDir, fileName);
+    using var reader = ArchiveReader.Open(path);
+    AssertFormat(reader, format);
+
+    if (singleFileCodec)
+    {
+        var expected = SingleFilePayload();
+        using var stream = reader.OpenEntryStream(reader.Entries[0]);
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        if (!ms.ToArray().SequenceEqual(expected))
+        {
+            throw new InvalidOperationException($"{fileName} 内容校验失败");
+        }
+    }
+    else
+    {
+        foreach (var (name, data) in Entries())
+        {
+            var entry = reader.Entries.First(e => e.FullName == name);
+            using var stream = reader.OpenEntryStream(entry);
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            if (!ms.ToArray().SequenceEqual(data))
+            {
+                throw new InvalidOperationException($"{fileName} 内容校验失败: {name}");
+            }
+        }
+    }
+
+    Console.WriteLine($"    校验 {fileName,-16} OK");
+}
+
+static void AssertFormat(ArchiveReader reader, string format)
+{
+    if (!string.Equals(reader.Format.Name, format, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException($"格式不符：期望 {format}，实际 {reader.Format.Name}");
+    }
+}
+
+static void GenerateEncrypted(string fileName, string formatName, Action<ArchiveWriteOptions> configure)
+{
+    var path = Path.Combine(Env.FixturesDir, fileName);
+    using (var writer = ArchiveWriter.CreateNew(path, configure, formatName: formatName))
+    {
+        foreach (var (name, data) in Entries())
+        {
+            writer.AddStream(name, new MemoryStream(data), data.Length);
+        }
+
+        writer.Finish();
+    }
+
+    Console.WriteLine($"  生成 {fileName,-16} {new FileInfo(path).Length,8}B  [{formatName} 加密]");
+}
+
+static void Verify(string fileName, string password)
+{
+    var path = Path.Combine(Env.FixturesDir, fileName);
+    using var reader = ArchiveReader.Open(path, o => o.Password = password);
+    var entries = Entries();
+
+    foreach (var entry in reader.Entries)
+    {
+        if (entry.IsDirectory) continue;
+
+        var expectedData = entry.FullName.EndsWith("binary.bin", StringComparison.Ordinal)
+            ? entries[1].Data
+            : entries[0].Data;
+
+        using var stream = reader.OpenEntryStream(entry);
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        var sha = Convert.ToHexString(SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+        var expected = Convert.ToHexString(SHA256.HashData(expectedData)).ToLowerInvariant();
+        if (sha != expected)
+        {
+            throw new InvalidOperationException($"{fileName} 内容校验失败: {entry.FullName}（SHA-256 不一致）");
+        }
+    }
+
+    Console.WriteLine($"    校验 {fileName,-16} 解密+内容 OK");
+}
+
+internal static class Env
+{
+    public static string FixturesDir { get; set; } = string.Empty;
+}

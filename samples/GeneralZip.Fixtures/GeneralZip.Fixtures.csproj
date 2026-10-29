@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>GeneralZip.Fixtures</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
+    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\native\generalzip-native\target\release\generalzip_native.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Visible="false"
+             Condition="Exists('..\..\native\generalzip-native\target\release\generalzip_native.dll')" />
+  </ItemGroup>
+
+</Project>

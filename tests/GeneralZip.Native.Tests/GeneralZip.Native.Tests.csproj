@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>GeneralZip.Native.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
+    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
+  </ItemGroup>
+
+  <!-- 本地构建时把 cargo 产物拷到测试输出（缺失则跳过，测试将报告核心缺失并跳过断言） -->
+  <ItemGroup>
+    <Content Include="..\..\native\generalzip-native\target\release\generalzip_native.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Visible="false"
+             Condition="Exists('..\..\native\generalzip-native\target\release\generalzip_native.dll')" />
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

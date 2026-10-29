@@ -1,0 +1,27 @@
+# Build artifacts
+bin/
+obj/
+target/
+out/
+runtimes/
+
+# Rust
+native/generalzip-native/target/
+native/dlltool-shim-rs/target/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# Test artifacts
+TestResults/
+*.trx
+
+# Local tooling state
+.mimosa/
+.zcode/
+
+# OS
+Thumbs.db
+.DS_Store

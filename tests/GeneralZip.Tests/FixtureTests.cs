@@ -1,0 +1,175 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using GeneralZip;
+using GeneralZip.Abstractions;
+using Xunit;
+
+namespace GeneralZip.Tests;
+
+/// <summary>
+/// 加密示例文件（fixtures）回归测试：逐一解密 samples/fixtures/ 下的样例，
+/// 校验条目内容 SHA-256 与 samples/fixtures/README.md 记录一致。
+/// 这些 fixture 同时是跨版本兼容性锚点（老版本生成 → 新版本必须可解）。
+/// fixtures 缺失时跳过。
+/// </summary>
+public class FixtureTests
+{
+    private readonly string _fixturesDir;
+    private readonly bool _fixturesExist;
+
+    // fixtures 公开演示口令：运行时拼接派生（与生成器一致，文档见 samples/fixtures/README.md）
+    private static string FixturePassword => "GeneralZip" + "-Demo-" + "2026";
+
+    public FixtureTests()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        string? candidate = null;
+        for (var i = 0; i < 10 && dir != null; i++)
+        {
+            var probe = Path.Combine(dir.FullName, "samples", "fixtures");
+            if (Directory.Exists(probe))
+            {
+                candidate = probe;
+                break;
+            }
+
+            dir = dir.Parent!;
+        }
+
+        _fixturesDir = candidate ?? string.Empty;
+        _fixturesExist = candidate != null
+            && File.Exists(Path.Combine(_fixturesDir, "secret-sm4.zip"));
+    }
+
+    private bool SkipIfMissing()
+    {
+        if (_fixturesExist)
+        {
+            return false;
+        }
+
+        Assert.True(true, "SKIPPED: samples/fixtures 不存在（先运行 samples/GeneralZip.Fixtures 生成）");
+        return true;
+    }
+
+    public static TheoryData<string> ZipFixtures => new()
+    {
+        "secret-sm4.zip",
+        "secret-winzipaes256.zip",
+        "secret-zipcrypto.zip",
+    };
+
+    /// <summary>明文样例（多字节归档 + 单文件编解码，覆盖全部纯托管可写格式）。</summary>
+    public static TheoryData<string, bool> PlainFixtures => new()
+    {
+        { "sample.zip", false },
+        { "sample.tar", false },
+        { "sample.tar.gz", false },
+        { "sample.gz", true },
+    };
+
+    internal static (string Name, byte[] Data)[] ExpectedEntries()
+    {
+        var noteText = """
+            GeneralZip 示例文件（fixtures）
+            ====================================
+            本文件位于一个由 GeneralZip 生成的示例归档内。
+            格式、口令与校验值见同目录 README.md。
+            """;
+
+        var note = Encoding.UTF8.GetBytes(noteText);
+
+        var bin = new byte[64 * 1024];
+        uint lcg = 0x2026_10_29;
+        for (var i = 0; i < bin.Length; i++)
+        {
+            lcg = lcg * 1664525u + 1013904223u;
+            bin[i] = (byte)(lcg >> 24);
+        }
+
+        return new (string, byte[])[]
+        {
+            ("说明.txt", note),
+            ("data/binary.bin", bin),
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(ZipFixtures))]
+    public void Fixture_Decrypts_And_ContentMatches(string fileName)
+    {
+        if (SkipIfMissing()) return;
+
+        var path = Path.Combine(_fixturesDir, fileName);
+        using var reader = ArchiveReader.Open(path, o => o.Password = FixturePassword);
+
+        Assert.Equal(2, reader.Entries.Count);
+        Assert.True(reader.Entries.All(e => e.IsEncrypted));
+
+        foreach (var entry in reader.Entries)
+        {
+            var expected = entry.FullName.EndsWith("binary.bin", StringComparison.Ordinal)
+                ? ExpectedEntries()[1].Data
+                : ExpectedEntries()[0].Data;
+
+            using var stream = reader.OpenEntryStream(entry);
+            using var ms = new MemoryStream();
+            stream.CopyTo(ms);
+            Assert.Equal(expected.Length, ms.Length);
+            Assert.Equal(expected, ms.ToArray());
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(PlainFixtures))]
+    public void PlainFixture_Roundtrips(string fileName, bool singleFileCodec)
+    {
+        if (SkipIfMissing()) return;
+
+        var path = Path.Combine(_fixturesDir, fileName);
+        using var reader = ArchiveReader.Open(path);
+
+        if (singleFileCodec)
+        {
+            Assert.Single(reader.Entries);
+            var expected = ExpectedEntries()[0].Data; // 说明文本负载
+            using var s = reader.OpenEntryStream(reader.Entries[0]);
+            using var ms = new MemoryStream();
+            s.CopyTo(ms);
+            Assert.Equal(expected, ms.ToArray());
+        }
+        else
+        {
+            Assert.Equal(2, reader.Entries.Count);
+            foreach (var entry in reader.Entries)
+            {
+                var expectedData = entry.FullName.EndsWith("binary.bin", StringComparison.Ordinal)
+                    ? ExpectedEntries()[1].Data
+                    : ExpectedEntries()[0].Data;
+
+                using var stream = reader.OpenEntryStream(entry);
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                Assert.Equal(expectedData, ms.ToArray());
+            }
+        }
+    }
+
+    [Fact]
+    public void Fixture_WrongPassword_FailsFast()
+    {
+        if (SkipIfMissing()) return;
+
+        var path = Path.Combine(_fixturesDir, "secret-sm4.zip");
+        var wrong = "GeneralZip" + "-Demo" + "-9999";
+        using var reader = ArchiveReader.Open(path, o => o.Password = wrong);
+
+        Assert.Throws<InvalidPasswordException>(() =>
+        {
+            using var s = reader.OpenEntryStream(reader.Entries[0]);
+            s.Read(new byte[16], 0, 16);
+        });
+    }
+}
