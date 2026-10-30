@@ -44,6 +44,23 @@ jobs:
           dotnet test tests/GeneralZip.Tests/GeneralZip.Tests.csproj -c Release --nologo
           --logger "trx" --results-directory "$(pwd)/test-results"
 
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem "test-results" -Filter *.trx -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($trx) {
+            [xml]$doc = Get-Content $trx.FullName
+            $failed = $doc.SelectNodes("//UnitTestResult[@outcome='Failed']")
+            "### Failed tests ($($failed.Count))" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            foreach ($f in $failed) {
+              "- ``$($f.GetAttribute('testName'))``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+              $msg = $f.SelectSingleNode(".//message")?.InnerText
+              if ($msg) { "  ``````" + $msg + "  ``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append }
+            }
+          }
+          Get-Content $trx.FullName | Select-String "testName" | Select-Object -First 30 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
       - name: Upload test results
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
