@@ -180,7 +180,13 @@ jobs:
           if (ms.Length != 19) throw new System.Exception("smoke failed");
           Console.WriteLine("SMOKE OK");
           '@ -Encoding utf8
-          dotnet run -c Release
+          $output = dotnet run -c Release 2>&1
+          $output | ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append }
+          $output | ForEach-Object { $_ }
+          if ($LASTEXITCODE -ne 0) {
+            "SMOKE FAILED" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+            exit 1
+          }
           Pop-Location
 
       - uses: actions/upload-artifact@v4
