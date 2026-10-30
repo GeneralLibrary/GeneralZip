@@ -19,7 +19,7 @@ GeneralZip-Demo-2026
 
 | 文件 | 格式 | 条目 | SHA-256 |
 |---|---|---|---|
-| `sample.zip` | ZIP | `说明.txt` + `data/binary.bin` | 见下方脚本输出 |
+| `sample.zip` | ZIP | `readme.txt` + `data/binary.bin` | 见下方脚本输出 |
 | `sample.7z` | 7z（LZMA2） | 同上（含 `data/` 目录条目） | 同上 |
 | `sample.tar` | TAR（ustar） | 同上 | 同上 |
 | `sample.tar.gz` | TAR.GZ | 同上 | 同上 |
@@ -35,8 +35,11 @@ GeneralZip-Demo-2026
 
 | 条目 | 大小 | SHA-256 |
 |---|---|---|
-| `说明.txt` | 191 B | `fbe35044f1e479a6f984e72c21df879fde8ca000e5e038d63586822033164752` |
+| `readme.txt` | 211 B | `0e9a09f91a677ae8f20eca115ad5b513f21a4081b373adc3fb6a9fc34631e5f1` |
 | `data/binary.bin` | 64 KB | `6f171634b41436360023b146b21a4f2c1cb73832546258f3f00e076b70cffb7e` |
+
+> 说明文本使用 LF（`\n`）行尾且在生成器/测试两侧均以显式字节构造，
+> 不随源码检出平台的行尾配置漂移。
 
 ## 加密样例
 

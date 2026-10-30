@@ -1,0 +1,32 @@
+# 源码与文本：仓库内统一 LF，避免行尾随平台漂移
+* text=auto
+*.cs text diff=csharp
+*.rs text
+*.md text
+*.yml text
+*.yaml text
+*.json text
+*.csproj text
+*.props text
+*.targets text
+*.slnx text
+*.sh text eol=lf
+*.ps1 text eol=crlf
+
+# 二进制文件（含全部 fixtures 归档）：禁止任何行尾转换
+*.zip -text
+*.7z -text
+*.rar -text
+*.tar -text
+*.gz -text
+*.bz2 -text
+*.xz -text
+*.zst -text
+*.lz4 -text
+*.dll -text
+*.so -text
+*.dylib -text
+*.exe -text
+*.png -text
+*.ico -text
+*.snk -text
