@@ -87,6 +87,11 @@ jobs:
           $shim = (Resolve-Path "native/dlltool-shim-rs/target/release/gzdlltool.exe").Path
           "RUSTFLAGS=-C dlltool=$shim" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Static CRT for musl cdylib
+        if: contains(matrix.target, 'musl')
+        shell: bash
+        run: echo "RUSTFLAGS=-C target-feature=-crt-static" >> $GITHUB_ENV
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
 
