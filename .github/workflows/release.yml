@@ -22,6 +22,9 @@ env:
 jobs:
   # ------------------------------------------------------------------
   # 1) Build the native core for every RID
+  #
+  #    windows-gnu: use the gnu HOST toolchain (self-contained MinGW linker)
+  #    plus the gzdlltool shim for raw-dylib import libraries.
   # ------------------------------------------------------------------
   native-core:
     name: native core (${{ matrix.rid }})
@@ -32,24 +35,29 @@ jobs:
         include:
           - rid: win-x64
             os: windows-latest
+            toolchain: stable-x86_64-pc-windows-gnu
             target: x86_64-pc-windows-gnu
-            use-shim: true
+            use-dlltool-shim: true
           - rid: linux-x64
             os: ubuntu-latest
+            toolchain: stable
             target: x86_64-unknown-linux-gnu
-            use-shim: false
+            use-dlltool-shim: false
           - rid: linux-musl-x64
             os: ubuntu-latest
+            toolchain: stable
             target: x86_64-unknown-linux-musl
-            use-shim: false
+            use-dlltool-shim: false
           - rid: osx-x64
             os: macos-latest
+            toolchain: stable
             target: x86_64-apple-darwin
-            use-shim: false
+            use-dlltool-shim: false
           - rid: osx-arm64
             os: macos-latest
+            toolchain: stable
             target: aarch64-apple-darwin
-            use-shim: false
+            use-dlltool-shim: false
 
     steps:
       - uses: actions/checkout@v4
@@ -57,24 +65,29 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ matrix.toolchain }}
           targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/generalzip-native
+          workspaces: |
+            native/generalzip-native
+            native/dlltool-shim-rs
           key: release-${{ matrix.rid }}
 
-      - name: Build (windows-gnu needs the dlltool shim)
-        if: matrix.use-shim
+      - name: Build dlltool shim (windows-gnu only)
+        if: matrix.use-dlltool-shim
+        run: cargo build --release --manifest-path native/dlltool-shim-rs/Cargo.toml
+
+      - name: Configure dlltool for raw-dylib (windows-gnu only)
+        if: matrix.use-dlltool-shim
         shell: pwsh
         run: |
-          cargo build --release --target ${{ matrix.target }} --manifest-path native/dlltool-shim-rs/Cargo.toml
-          $env:RUSTFLAGS = "-C dlltool=" + (Resolve-Path "native/dlltool-shim-rs/target/release/gzdlltool.exe")
-          cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
+          $shim = (Resolve-Path "native/dlltool-shim-rs/target/release/gzdlltool.exe").Path
+          "RUSTFLAGS=-C dlltool=$shim" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build
-        if: ${{ !matrix.use-shim }}
         run: cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
 
       - uses: actions/upload-artifact@v4
@@ -129,14 +142,14 @@ jobs:
           dotnet pack src/GeneralZip/GeneralZip.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
           dotnet pack src/GeneralZip.Native/GeneralZip.Native.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
 
-      - name: Smoke test (install packed GeneralZip.Native into a fresh console app)
+      - name: Smoke test (fresh console app installs packed packages)
         shell: pwsh
         run: |
           $smoke = Join-Path $env:RUNNER_TEMP "smoke"
           dotnet new console -o $smoke --force
           Push-Location $smoke
-          dotnet add package GeneralZip --source "$(Resolve-Path ../artifacts/nuget)" --no-restore
-          dotnet add package GeneralZip.Native --source "$(Resolve-Path ../artifacts/nuget)" --no-restore
+          dotnet add package GeneralZip --source "$(Resolve-Path ../artifacts/nuget)"
+          dotnet add package GeneralZip.Native --source "$(Resolve-Path ../artifacts/nuget)"
           Set-Content -Path Program.cs -Value @'
           using GeneralZip;
           using GeneralZip.Native;
@@ -148,7 +161,7 @@ jobs:
           var dir = Path.Combine(Path.GetTempPath(), "gzp-smoke");
           if (Directory.Exists(dir)) Directory.Delete(dir, true);
           Directory.CreateDirectory(dir);
-          var zip = Path.Combine(dir, "t.zip");
+          var zip = Path.Combine(dir, "t.7z");
           using (var w = ArchiveWriter.CreateNew(zip, formatName: "7Z"))
           {
               var payload = System.Text.Encoding.UTF8.GetBytes("release smoke test");

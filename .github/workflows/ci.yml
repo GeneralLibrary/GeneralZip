@@ -18,93 +18,8 @@ env:
 
 jobs:
   # ------------------------------------------------------------------
-  # 1) Rust native core: build every RID matrix + upload as artifacts
-  # ------------------------------------------------------------------
-  native-core:
-    name: native core (${{ matrix.rid }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rid: win-x64
-            os: windows-latest
-            target: x86_64-pc-windows-gnu      # matches repo default (no MSVC needed)
-            use-shim: true
-          - rid: linux-x64
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            use-shim: false
-          - rid: linux-musl-x64
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            use-shim: false
-          - rid: osx-x64
-            os: macos-latest
-            target: x86_64-apple-darwin
-            use-shim: false
-          - rid: osx-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-            use-shim: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/generalzip-native
-          key: ${{ matrix.rid }}
-
-      - name: Configure CN mirrors (best-effort)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          "RUSTUP_DIST_SERVER=https://rsproxy.cn`nRUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup" |
-            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Build (windows-gnu needs the dlltool shim for raw-dylib)
-        if: matrix.use-shim
-        shell: pwsh
-        run: |
-          cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
-          # Build the dlltool shim and re-run with it (raw-dylib import libs)
-          cargo build --release --manifest-path native/dlltool-shim-rs/Cargo.toml
-          $env:RUSTFLAGS = "-C dlltool=" + (Resolve-Path "native/dlltool-shim-rs/target/release/gzdlltool.exe")
-          cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
-
-      - name: Build
-        if: ${{ !matrix.use-shim }}
-        run: cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
-
-      - name: Stage artifact
-        shell: bash
-        run: |
-          mkdir -p dist/${{ matrix.rid }}
-          case "${{ matrix.os }}" in
-            windows-*) ext=dll ;;
-            macos-*)   ext=dylib ;;
-            *)         ext=so ;;
-          esac
-          cp "native/generalzip-native/target/${{ matrix.target }}/release/libgeneralzip_native.$ext" \
-             dist/${{ matrix.rid }}/generalzip_native.$ext 2>/dev/null || \
-          cp "native/generalzip-native/target/${{ matrix.target }}/release/generalzip_native.$ext" \
-             dist/${{ matrix.rid }}/generalzip_native.$ext
-          ls -la dist/${{ matrix.rid }}/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: native-core-${{ matrix.rid }}
-          path: dist/${{ matrix.rid }}/*
-
-  # ------------------------------------------------------------------
-  # 2) Managed: build + test (net8.0; native tests auto-skip without core)
+  # 1) Managed: build + test (net8.0; native tests auto-skip without core)
+  #    Runs first and on all OSes — fast feedback, no Rust required.
   # ------------------------------------------------------------------
   managed:
     name: managed tests (${{ matrix.os }})
@@ -129,6 +44,100 @@ jobs:
 
       - name: Test (native binding; skipped without core)
         run: dotnet test tests/GeneralZip.Native.Tests/GeneralZip.Native.Tests.csproj -c Release --nologo
+
+  # ------------------------------------------------------------------
+  # 2) Rust native core: build every RID matrix + upload as artifacts
+  #
+  #    windows-gnu specifics:
+  #    - Use the gnu HOST toolchain so the self-contained MinGW linker works.
+  #    - raw-dylib crates (getrandom) need dlltool; the bundled dlltool lacks
+  #      as.exe, so we build our Rust shim (gzdlltool) first and point
+  #      `-C dlltool` at it.
+  # ------------------------------------------------------------------
+  native-core:
+    name: native core (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            toolchain: stable-x86_64-pc-windows-gnu
+            target: x86_64-pc-windows-gnu
+            use-dlltool-shim: true
+          - rid: linux-x64
+            os: ubuntu-latest
+            toolchain: stable
+            target: x86_64-unknown-linux-gnu
+            use-dlltool-shim: false
+          - rid: linux-musl-x64
+            os: ubuntu-latest
+            toolchain: stable
+            target: x86_64-unknown-linux-musl
+            use-dlltool-shim: false
+          - rid: osx-x64
+            os: macos-latest
+            toolchain: stable
+            target: x86_64-apple-darwin
+            use-dlltool-shim: false
+          - rid: osx-arm64
+            os: macos-latest
+            toolchain: stable
+            target: aarch64-apple-darwin
+            use-dlltool-shim: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/generalzip-native
+            native/dlltool-shim-rs
+          key: ${{ matrix.rid }}
+
+      - name: Build dlltool shim (windows-gnu only)
+        if: matrix.use-dlltool-shim
+        run: cargo build --release --manifest-path native/dlltool-shim-rs/Cargo.toml
+
+      - name: Configure dlltool for raw-dylib (windows-gnu only)
+        if: matrix.use-dlltool-shim
+        shell: pwsh
+        run: |
+          $shim = (Resolve-Path "native/dlltool-shim-rs/target/release/gzdlltool.exe").Path
+          "RUSTFLAGS=-C dlltool=$shim" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path native/generalzip-native/Cargo.toml
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p dist/${{ matrix.rid }}
+          case "${{ matrix.os }}" in
+            windows-*) ext=dll ;;
+            macos-*)   ext=dylib ;;
+            *)         ext=so ;;
+          esac
+          # windows-gnu artifact name has no lib prefix; unix/mac use lib prefix
+          src1="native/generalzip-native/target/${{ matrix.target }}/release/generalzip_native.$ext"
+          src2="native/generalzip-native/target/${{ matrix.target }}/release/libgeneralzip_native.$ext"
+          cp "$src1" "dist/${{ matrix.rid }}/generalzip_native.$ext" 2>/dev/null \
+            || cp "$src2" "dist/${{ matrix.rid }}/generalzip_native.$ext"
+          ls -la dist/${{ matrix.rid }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-core-${{ matrix.rid }}
+          path: dist/${{ matrix.rid }}/*
 
   # ------------------------------------------------------------------
   # 3) Integration: managed tests WITH the native core (windows-x64)
