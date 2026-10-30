@@ -40,7 +40,17 @@ jobs:
         run: dotnet build GeneralZip.slnx -c Release --nologo
 
       - name: Test (core)
-        run: dotnet test tests/GeneralZip.Tests/GeneralZip.Tests.csproj -c Release --nologo
+        run: >
+          dotnet test tests/GeneralZip.Tests/GeneralZip.Tests.csproj -c Release --nologo
+          --logger "trx" --results-directory "$(pwd)/test-results"
+
+      - name: Upload test results
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-core-${{ matrix.os }}
+          path: test-results/**/*.trx
+          if-no-files-found: ignore
 
       - name: Test (native binding; skipped without core)
         run: dotnet test tests/GeneralZip.Native.Tests/GeneralZip.Native.Tests.csproj -c Release --nologo
@@ -103,6 +113,10 @@ jobs:
             native/generalzip-native
             native/dlltool-shim-rs
           key: ${{ matrix.rid }}
+
+      - name: Install musl tools (linux-musl only)
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build dlltool shim (windows-gnu only)
         if: matrix.use-dlltool-shim
