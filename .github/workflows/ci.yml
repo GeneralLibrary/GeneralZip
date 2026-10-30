@@ -169,5 +169,5 @@ jobs:
       - name: Build (Release)
         run: dotnet build tests/GeneralZip.Native.Tests/GeneralZip.Native.Tests.csproj -c Release --nologo
 
-      - name: Test (native core exercised: 7z/BZ2/XZ/ZSTD/LZ4/RAR paths)
+      - name: "Test (native core exercised: 7z/BZ2/XZ/ZSTD/LZ4/RAR paths)"
         run: dotnet test tests/GeneralZip.Native.Tests/GeneralZip.Native.Tests.csproj -c Release --nologo
