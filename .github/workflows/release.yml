@@ -168,17 +168,18 @@ jobs:
           if (Directory.Exists(dir)) Directory.Delete(dir, true);
           Directory.CreateDirectory(dir);
           var zip = Path.Combine(dir, "t.7z");
-          using (var w = ArchiveWriter.CreateNew(zip, formatName: "7Z"))
+          using (var w = GeneralZipWriter.CreateNew(zip, formatName: "7Z"))
           {
               var payload = System.Text.Encoding.UTF8.GetBytes("release smoke test");
               w.AddStream("t.txt", new MemoryStream(payload), payload.Length);
               w.Finish();
           }
-          using var r = ArchiveReader.Open(zip);
+          using var r = GeneralZipReader.Open(zip);
           using var s = r.OpenEntryStream(r.Entries[0]);
           using var ms = new MemoryStream();
           s.CopyTo(ms);
-          if (ms.Length != 19) throw new System.Exception("smoke failed");
+          var expected = System.Text.Encoding.UTF8.GetBytes("release smoke test");
+          if (!ms.ToArray().SequenceEqual(expected)) throw new System.Exception("smoke failed");
           Console.WriteLine("SMOKE OK");
           '@ -Encoding utf8
           $output = dotnet run -c Release 2>&1
