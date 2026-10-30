@@ -64,7 +64,7 @@ public sealed class ArchiveWriteOptions
         AllowWeakZipCrypto = AllowWeakZipCrypto,
     };
 
-    internal IEncryptionProvider? ResolveProvider(EncryptionRegistry registry)
+    internal IEncryptionProvider? ResolveProvider(GeneralZipEncryptionRegistry registry)
     {
         if (EncryptionProvider != null)
         {

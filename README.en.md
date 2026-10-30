@@ -68,7 +68,7 @@ await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip", o =>
 });
 
 // Read: wrong passwords fail fast (per-entry verifier), no silent corruption
-using var reader = ArchiveReader.Open(@"D:\backup.zip", o => o.Password = password);
+using var reader = GeneralZipReader.Open(@"D:\backup.zip", o => o.Password = password);
 var entry = reader.Entries[0];
 using var stream = reader.OpenEntryStream(entry);   // lazy decrypt + decompress stream
 ```
@@ -80,7 +80,7 @@ using GeneralZip;
 using GeneralZip.Abstractions;
 
 // Create an archive with progress reporting
-using var writer = ArchiveWriter.CreateNew(@"D:\photos.zip", o =>
+using var writer = GeneralZipWriter.CreateNew(@"D:\photos.zip", o =>
 {
     o.Level = CompressionLevelChoice.SmallestSize;
     o.Progress = new Progress<ArchiveProgress>(p =>
@@ -93,7 +93,7 @@ await writer.FinishAsync();     // auto-finalized on Dispose too
 
 ```csharp
 // Extract with interactive password, overwrite and error handling
-using var reader = ArchiveReader.Open(archivePath, configure: null, r =>
+using var reader = GeneralZipReader.Open(archivePath, configure: null, r =>
 {
     // For whole-archive formats (e.g. 7z header encryption) subscribe here —
     // the password may be needed during Open itself.
@@ -116,7 +116,7 @@ var result = reader.ExtractToDirectory(@"D:\out", new ExtractionOptions
 ### Integrity testing
 
 ```csharp
-var test = ArchiveReader.Open(path).TestAll();
+var test = GeneralZipReader.Open(path).TestAll();
 Console.WriteLine(test.Success ? "OK" : $"{test.FailedCount} entries failed");
 ```
 

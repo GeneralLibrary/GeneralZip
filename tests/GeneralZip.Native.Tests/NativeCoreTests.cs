@@ -68,7 +68,7 @@ public class NativeCoreTests : IDisposable
         File.WriteAllText(Path.Combine(src, "sub", "b.bin"), new string('B', 50000));
 
         var archive = Path.Combine(_dir, "out.7z");
-        using (var w = ArchiveWriter.CreateNew(archive, formatName: "7Z"))
+        using (var w = GeneralZipWriter.CreateNew(archive, formatName: "7Z"))
         {
             w.AddDirectory(src, "data");
             w.Finish();
@@ -76,7 +76,7 @@ public class NativeCoreTests : IDisposable
 
         Assert.Equal("7Z", DetectFormat(archive)?.Name);
 
-        using var r = ArchiveReader.Open(archive);
+        using var r = GeneralZipReader.Open(archive);
         Assert.Equal("7Z", r.Format.Name);
         Assert.True(r.Entries.Count >= 2);
 
@@ -97,7 +97,7 @@ public class NativeCoreTests : IDisposable
         var password = NewPassword();
         var payload = "机密 7z encrypted content";
 
-        using (var w = ArchiveWriter.CreateNew(archive, o =>
+        using (var w = GeneralZipWriter.CreateNew(archive, o =>
                {
                    o.Password = password;
                }, formatName: "7Z"))
@@ -111,7 +111,7 @@ public class NativeCoreTests : IDisposable
         var failedFast = false;
         try
         {
-            using var r = ArchiveReader.Open(archive, o => o.Password = wrong);
+            using var r = GeneralZipReader.Open(archive, o => o.Password = wrong);
             using var s = r.OpenEntryStream(r.Entries[0]);
             s.Read(new byte[16], 0, 16);
         }
@@ -123,7 +123,7 @@ public class NativeCoreTests : IDisposable
         Assert.True(failedFast, "错误口令必须失败");
 
         // 正确口令 → 完整读出
-        using (var r2 = ArchiveReader.Open(archive, o => o.Password = password))
+        using (var r2 = GeneralZipReader.Open(archive, o => o.Password = password))
         {
             using var s2 = r2.OpenEntryStream(r2.Entries[0]);
             using var ms = new MemoryStream();
@@ -139,13 +139,13 @@ public class NativeCoreTests : IDisposable
         GeneralZipNative.Initialize();
 
         var archive = Path.Combine(_dir, "t.7z");
-        using (var w = ArchiveWriter.CreateNew(archive, formatName: "7Z"))
+        using (var w = GeneralZipWriter.CreateNew(archive, formatName: "7Z"))
         {
             w.AddStream("f.txt", new MemoryStream(new byte[4096]), 4096);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(archive);
+        using var r = GeneralZipReader.Open(archive);
         var result = r.TestAll(new ExtractionOptions { ErrorPolicy = ErrorPolicy.SkipAll });
         Assert.Equal(0, result.FailedCount);
     }
@@ -164,7 +164,7 @@ public class NativeCoreTests : IDisposable
 
         // xz 写经原生编码器（NativeBridge 桥接到 Rust lzma_rust2 LZMA2 编码器）
         var xz = Path.Combine(_dir, "a.txt.xz");
-        using (var w = ArchiveWriter.CreateNew(xz))
+        using (var w = GeneralZipWriter.CreateNew(xz))
         {
             using var content = File.OpenRead(src);
             w.AddStream("a.txt", content, content.Length);
@@ -174,7 +174,7 @@ public class NativeCoreTests : IDisposable
         Assert.Equal("XZ", DetectFormat(xz)?.Name);
         Assert.True(new FileInfo(xz).Length < new FileInfo(src).Length, "xz 应产生压缩效果");
 
-        using (var r = ArchiveReader.Open(xz))
+        using (var r = GeneralZipReader.Open(xz))
         {
             using var s = r.OpenEntryStream(r.Entries[0]);
             using var fs = File.Create(restored);

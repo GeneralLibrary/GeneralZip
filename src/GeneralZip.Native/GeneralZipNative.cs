@@ -34,7 +34,7 @@ public static class GeneralZipNative
                 return false;
             }
 
-            var registry = ArchiveFormatRegistry.Default;
+            var registry = GeneralZipFormatRegistry.Default;
 
             // 7z 能力（sevenz-rust2，纯 Rust）
             if ((NativeCoreLoader.Capabilities & NativeCoreLoader.CapabilitySevenZ) != 0)

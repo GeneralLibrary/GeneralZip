@@ -67,7 +67,7 @@ await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip", o =>
 });
 
 // 读取：错误口令快速失败（条目级校验值），不会静默产生坏数据
-using var reader = ArchiveReader.Open(@"D:\backup.zip", o => o.Password = password);
+using var reader = GeneralZipReader.Open(@"D:\backup.zip", o => o.Password = password);
 var entry = reader.Entries[0];
 using var stream = reader.OpenEntryStream(entry);   // 惰性解密 + 解压流
 ```
@@ -79,7 +79,7 @@ using GeneralZip;
 using GeneralZip.Abstractions;
 
 // 带进度创建归档
-using var writer = ArchiveWriter.CreateNew(@"D:\photos.zip", o =>
+using var writer = GeneralZipWriter.CreateNew(@"D:\photos.zip", o =>
 {
     o.Level = CompressionLevelChoice.SmallestSize;
     o.Progress = new Progress<ArchiveProgress>(p =>
@@ -92,7 +92,7 @@ await writer.FinishAsync();     // Dispose 未 Finish 时也会自动收尾
 
 ```csharp
 // 交互取密、覆盖与错误处理
-using var reader = ArchiveReader.Open(archivePath, configure: null, r =>
+using var reader = GeneralZipReader.Open(archivePath, configure: null, r =>
 {
     // 整包加密格式（如 7z 头部加密）请在此订阅 —— Open 期间就可能需要口令。
     r.PasswordRequired += (_, e) =>
@@ -115,7 +115,7 @@ var result = reader.ExtractToDirectory(@"D:\out", new ExtractionOptions
 
 ```csharp
 // 明文归档无需口令；加密归档需提供口令
-using var testReader = ArchiveReader.Open(path, o => o.Password = password);
+using var testReader = GeneralZipReader.Open(path, o => o.Password = password);
 var test = testReader.TestAll();
 Console.WriteLine(test.Success ? "OK" : $"{test.FailedCount} 个条目失败");
 ```

@@ -33,14 +33,14 @@ public class EventTests : IDisposable
         var completed = new List<string>();
         var overall = new List<ArchiveProgress>();
 
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("one.txt", new MemoryStream(new byte[100_000]), 100_000);
             w.AddStream("two.txt", new MemoryStream(new byte[50]), 50);
             w.Finish();
         }
 
-        using (var r = ArchiveReader.Open(zip))
+        using (var r = GeneralZipReader.Open(zip))
         {
             r.EntryStarted += (_, e) => started.Add(e.EntryName);
             r.EntryCompleted += (_, e) => completed.Add(e.EntryName);
@@ -60,7 +60,7 @@ public class EventTests : IDisposable
         var zip = Path.Combine(_dir, "wprog.zip");
         var percents = new List<double?>();
 
-        using (var w = ArchiveWriter.CreateNew(zip, o => o.Progress = new Progress<ArchiveProgress>(p => percents.Add(p.Percent))))
+        using (var w = GeneralZipWriter.CreateNew(zip, o => o.Progress = new Progress<ArchiveProgress>(p => percents.Add(p.Percent))))
         {
             w.AddStream("p.bin", new MemoryStream(new byte[500_000]), 500_000);
             w.Finish();
@@ -74,7 +74,7 @@ public class EventTests : IDisposable
     {
         var zip = Path.Combine(_dir, "ask.zip");
         var password = TestSecrets.Fixed(21);
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = "SM4-GM";
                    o.Password = password;
@@ -85,7 +85,7 @@ public class EventTests : IDisposable
         }
 
         var asked = 0;
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         r.PasswordRequired += (_, e) =>
         {
             asked++;
@@ -103,7 +103,7 @@ public class EventTests : IDisposable
     public void PasswordRequired_Cancel_Throws()
     {
         var zip = Path.Combine(_dir, "cancel-pw.zip");
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = "WinZipAES256";
                    o.Password = TestSecrets.Fixed(22);
@@ -113,7 +113,7 @@ public class EventTests : IDisposable
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         r.PasswordRequired += (_, e) => e.Cancel = true;
 
         Assert.Throws<PasswordRequiredException>(() =>
@@ -128,7 +128,7 @@ public class EventTests : IDisposable
     {
         var zip = Path.Combine(_dir, "retry.zip");
         var right = TestSecrets.Fixed(23);
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = "SM4-GM";
                    o.Password = right;
@@ -139,7 +139,7 @@ public class EventTests : IDisposable
         }
 
         var attempts = new List<int>();
-        using var r = ArchiveReader.Open(zip, o => o.Password = TestSecrets.Wrong(right));
+        using var r = GeneralZipReader.Open(zip, o => o.Password = TestSecrets.Wrong(right));
         r.PasswordRequired += (_, e) =>
         {
             attempts.Add(e.Attempt);
@@ -157,7 +157,7 @@ public class EventTests : IDisposable
     public void OverwriteAsk_Event_Decision()
     {
         var zip = Path.Combine(_dir, "ow.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("f.txt", new MemoryStream(Encoding.UTF8.GetBytes("new")), 3);
             w.Finish();
@@ -168,7 +168,7 @@ public class EventTests : IDisposable
         File.WriteAllText(Path.Combine(dest, "f.txt"), "old");
 
         var asked = 0;
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         r.OverwriteQuery += (_, e) =>
         {
             asked++;
@@ -181,7 +181,7 @@ public class EventTests : IDisposable
 
         // Skip 决策
         asked = 0;
-        using (var r2 = ArchiveReader.Open(zip))
+        using (var r2 = GeneralZipReader.Open(zip))
         {
             r2.OverwriteQuery += (_, e) =>
             {
@@ -202,7 +202,7 @@ public class EventTests : IDisposable
         // 构造第二个条目损坏的包：先写正常包再截断中部数据区
         var zip = BuildCorruptedSecondEntry();
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         var result = r.ExtractToDirectory(Path.Combine(_dir, "out-skip"),
             new ExtractionOptions { ErrorPolicy = ErrorPolicy.SkipAll });
 
@@ -216,7 +216,7 @@ public class EventTests : IDisposable
         var zip = BuildCorruptedSecondEntry();
         var decisions = 0;
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         r.ErrorReport += (_, e) =>
         {
             decisions++;
@@ -234,7 +234,7 @@ public class EventTests : IDisposable
     public void Cancellation_StopsExtraction()
     {
         var zip = Path.Combine(_dir, "cancel.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("a.bin", new MemoryStream(new byte[300_000]), 300_000);
             w.AddStream("b.bin", new MemoryStream(new byte[300_000]), 300_000);
@@ -243,7 +243,7 @@ public class EventTests : IDisposable
 
         using var cts = new CancellationTokenSource();
         var cancelledAt = 0;
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         r.EntryCompleted += (_, _) =>
         {
             cancelledAt++;
@@ -259,7 +259,7 @@ public class EventTests : IDisposable
     public void TestAll_ReportsFailures_WithSkipAll()
     {
         var zip = BuildCorruptedSecondEntry();
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         var result = r.TestAll(new ExtractionOptions { ErrorPolicy = ErrorPolicy.SkipAll });
         Assert.Equal(1, result.FailedCount);
     }
@@ -268,7 +268,7 @@ public class EventTests : IDisposable
     private string BuildCorruptedSecondEntry()
     {
         var good = Path.Combine(_dir, $"src-good-{Guid.NewGuid():N}.zip");
-        using (var w = ArchiveWriter.CreateNew(good))
+        using (var w = GeneralZipWriter.CreateNew(good))
         {
             w.AddStream("1st.txt", new MemoryStream(Encoding.UTF8.GetBytes("fine")), 4);
             w.AddStream("2nd.txt", new MemoryStream(new byte[4096]), 4096);

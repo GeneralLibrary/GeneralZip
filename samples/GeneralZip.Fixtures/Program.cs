@@ -157,7 +157,7 @@ static byte[] SingleFilePayload() => Entries()[0].Data;
 static void GeneratePlain(string fileName, string format, bool singleFileCodec)
 {
     var path = Path.Combine(Env.FixturesDir, fileName);
-    using (var writer = ArchiveWriter.CreateNew(path, formatName: format))
+    using (var writer = GeneralZipWriter.CreateNew(path, formatName: format))
     {
         if (singleFileCodec)
         {
@@ -180,7 +180,7 @@ static void GeneratePlain(string fileName, string format, bool singleFileCodec)
 static void VerifyPlain(string fileName, string format, bool singleFileCodec)
 {
     var path = Path.Combine(Env.FixturesDir, fileName);
-    using var reader = ArchiveReader.Open(path);
+    using var reader = GeneralZipReader.Open(path);
     AssertFormat(reader, format);
 
     if (singleFileCodec)
@@ -212,7 +212,7 @@ static void VerifyPlain(string fileName, string format, bool singleFileCodec)
     Console.WriteLine($"    verified {fileName,-16} OK");
 }
 
-static void AssertFormat(ArchiveReader reader, string format)
+static void AssertFormat(GeneralZipReader reader, string format)
 {
     if (!string.Equals(reader.Format.Name, format, StringComparison.OrdinalIgnoreCase))
     {
@@ -223,7 +223,7 @@ static void AssertFormat(ArchiveReader reader, string format)
 static void GenerateEncrypted(string fileName, string formatName, Action<ArchiveWriteOptions> configure)
 {
     var path = Path.Combine(Env.FixturesDir, fileName);
-    using (var writer = ArchiveWriter.CreateNew(path, configure, formatName: formatName))
+    using (var writer = GeneralZipWriter.CreateNew(path, configure, formatName: formatName))
     {
         foreach (var (name, data) in Entries())
         {
@@ -239,7 +239,7 @@ static void GenerateEncrypted(string fileName, string formatName, Action<Archive
 static void Verify(string fileName, string password)
 {
     var path = Path.Combine(Env.FixturesDir, fileName);
-    using var reader = ArchiveReader.Open(path, o => o.Password = password);
+    using var reader = GeneralZipReader.Open(path, o => o.Password = password);
     var entries = Entries();
 
     foreach (var entry in reader.Entries)

@@ -13,7 +13,7 @@ namespace GeneralZip;
 /// Dispose 时自动 Finish（未显式 Finish 的情况下），确保 using 语法得到完整归档。
 /// 本类型非线程安全。
 /// </summary>
-public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
+public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
 {
     private readonly IArchiveWriter _inner;
     private readonly ArchiveWriteOptions _options;
@@ -21,7 +21,7 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
     private long _entriesStarted;
     private bool _finished;
 
-    private ArchiveWriter(IArchiveWriter inner, ArchiveWriteOptions options)
+    private GeneralZipWriter(IArchiveWriter inner, ArchiveWriteOptions options)
     {
         _inner = inner;
         _options = options;
@@ -35,18 +35,18 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
     /// <param name="configure">写入选项。</param>
     /// <param name="formatName">显式指定格式名；给定时忽略扩展名推断。</param>
     /// <param name="registry">自定义格式注册表。</param>
-    public static ArchiveWriter CreateNew(
+    public static GeneralZipWriter CreateNew(
         string archivePath,
         Action<ArchiveWriteOptions>? configure = null,
         string? formatName = null,
-        ArchiveFormatRegistry? registry = null)
+        GeneralZipFormatRegistry? registry = null)
     {
         if (archivePath == null) throw new ArgumentNullException(nameof(archivePath));
 
         var options = new ArchiveWriteOptions();
         configure?.Invoke(options);
 
-        var reg = registry ?? ArchiveFormatRegistry.Default;
+        var reg = registry ?? GeneralZipFormatRegistry.Default;
         var format = formatName != null
             ? reg.FindByName(formatName) ?? throw new UnsupportedFormatException($"Unregistered format: {formatName}")
             : reg.DetectByExtension(archivePath)
@@ -76,11 +76,11 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
     }
 
     /// <summary>写入到流。formatName 必填（流无法从扩展名推断）。</summary>
-    public static ArchiveWriter CreateNew(
+    public static GeneralZipWriter CreateNew(
         Stream output,
         string formatName,
         Action<ArchiveWriteOptions>? configure = null,
-        ArchiveFormatRegistry? registry = null)
+        GeneralZipFormatRegistry? registry = null)
     {
         if (output == null) throw new ArgumentNullException(nameof(output));
         if (formatName == null) throw new ArgumentNullException(nameof(formatName));
@@ -88,7 +88,7 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
         var options = new ArchiveWriteOptions();
         configure?.Invoke(options);
 
-        var reg = registry ?? ArchiveFormatRegistry.Default;
+        var reg = registry ?? GeneralZipFormatRegistry.Default;
         var format = reg.FindByName(formatName)
                      ?? throw new UnsupportedFormatException($"Unregistered format: {formatName}");
 
@@ -100,12 +100,12 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
         return OpenOnStreamCore(output, format, options);
     }
 
-    private static ArchiveWriter OpenOnStreamCore(Stream stream, IArchiveFormat format, ArchiveWriteOptions options)
+    private static GeneralZipWriter OpenOnStreamCore(Stream stream, IArchiveFormat format, ArchiveWriteOptions options)
     {
         var effective = options.CloneForFormat();
-        effective.EncryptionProvider = options.ResolveProvider(EncryptionRegistry.Default);
+        effective.EncryptionProvider = options.ResolveProvider(GeneralZipEncryptionRegistry.Default);
         var inner = format.OpenWrite(stream, effective);
-        return new ArchiveWriter(inner, options);
+        return new GeneralZipWriter(inner, options);
     }
 
     // ---------- 实例 API ----------
@@ -321,12 +321,12 @@ public sealed class ArchiveWriter : IDisposable, IAsyncDisposable
 
     private sealed class Relay
     {
-        private readonly ArchiveWriter _owner;
+        private readonly GeneralZipWriter _owner;
         private readonly string _name;
         private readonly long? _size;
         private long _lastEventBytes;
 
-        public Relay(ArchiveWriter owner, string name, long? size)
+        public Relay(GeneralZipWriter owner, string name, long? size)
         {
             _owner = owner;
             _name = name;

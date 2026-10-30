@@ -34,14 +34,14 @@ public class ZipRoundtripTests : IDisposable
         var zip = Path.Combine(_dir, $"lv-{level}.zip");
         var payload = Encoding.UTF8.GetBytes("压缩往返测试 GeneralZip 中文内容 data 0123456789");
 
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("a/中文文件.txt", new MemoryStream(payload), payload.Length);
             w.AddStream("b/empty.bin", new MemoryStream(Array.Empty<byte>()), 0);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         Assert.Equal(2, r.Entries.Count);
         Assert.Equal("a/中文文件.txt", r.Entries[0].FullName);
 
@@ -64,14 +64,14 @@ public class ZipRoundtripTests : IDisposable
         File.WriteAllText(Path.Combine(src, "sub", "deep", "leaf.bin"), new string('L', 50000));
 
         var zip = Path.Combine(_dir, "dirs.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddDirectory(src, "backup");
             w.Finish();
         }
 
         var dest = Path.Combine(_dir, "out");
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         var result = r.ExtractToDirectory(dest);
 
         Assert.Equal(3, result.ProcessedCount);
@@ -87,14 +87,14 @@ public class ZipRoundtripTests : IDisposable
         var zip = Path.Combine(_dir, "nonseek.zip");
         var payload = Encoding.UTF8.GetBytes(new string('S', 123456));
 
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             var stream = new NonSeekableWrapper(new MemoryStream(payload));
             w.AddStream("blob.bin", stream, size: null);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
         s.CopyTo(ms);
@@ -106,14 +106,14 @@ public class ZipRoundtripTests : IDisposable
     {
         var zip = Path.Combine(_dir, "out-stream.zip");
         using (var fs = new FileStream(zip, FileMode.Create, FileAccess.Write))
-        using (var w = ArchiveWriter.CreateNew(fs, formatName: "ZIP"))
+        using (var w = GeneralZipWriter.CreateNew(fs, formatName: "ZIP"))
         {
             var payload = Encoding.UTF8.GetBytes("非寻址输出");
             w.AddStream("x.txt", new MemoryStream(payload), payload.Length);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         Assert.Single(r.Entries);
     }
 
@@ -126,11 +126,11 @@ public class ZipRoundtripTests : IDisposable
     [InlineData("SM4-GM")]
     public void EncryptedRoundtrip_AllAlgorithms(string algorithm)
     {
-        var zip = Path.Combine(_dir, $"enc-{algorithm}.zip");
+        var zip = Path.Combine(_dir, "enc-" + algorithm + ".zip");
         var password = TestSecrets.Fixed(algorithm.Length);
         var payload = Encoding.UTF8.GetBytes($"加密往返 {algorithm} 机密数据 confidential");
 
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = algorithm;
                    o.Password = password;
@@ -143,7 +143,7 @@ public class ZipRoundtripTests : IDisposable
         }
 
         // 错误口令 → 快速失败（AES/SM4 校验值；ZipCrypto 头部校验字节）
-        using (var r = ArchiveReader.Open(zip, o => o.Password = TestSecrets.Wrong(password)))
+        using (var r = GeneralZipReader.Open(zip, o => o.Password = TestSecrets.Wrong(password)))
         {
             Assert.True(r.IsEncrypted);
             Assert.Throws<InvalidPasswordException>(() =>
@@ -155,7 +155,7 @@ public class ZipRoundtripTests : IDisposable
         }
 
         // 正确口令 → 完整读出
-        using (var r = ArchiveReader.Open(zip, o => o.Password = password))
+        using (var r = GeneralZipReader.Open(zip, o => o.Password = password))
         {
             using var s = r.OpenEntryStream(r.Entries[0]);
             using var ms = new MemoryStream();
@@ -174,7 +174,7 @@ public class ZipRoundtripTests : IDisposable
     {
         var zip = Path.Combine(_dir, $"tamper-{algorithm}.zip");
         var password = TestSecrets.Fixed(algorithm.Length + 1);
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = algorithm;
                    o.Password = password;
@@ -196,7 +196,7 @@ public class ZipRoundtripTests : IDisposable
         var detected = false;
         try
         {
-            using var r = ArchiveReader.Open(tampered, o => o.Password = password);
+            using var r = GeneralZipReader.Open(tampered, o => o.Password = password);
             using var s = r.OpenEntryStream(r.Entries[0]);
             using var ms = new MemoryStream();
             s.CopyTo(ms);
@@ -215,7 +215,7 @@ public class ZipRoundtripTests : IDisposable
         var zip = Path.Combine(_dir, "weak.zip");
         Assert.Throws<NotSupportedException>(() =>
         {
-            using var w = ArchiveWriter.CreateNew(zip, o =>
+            using var w = GeneralZipWriter.CreateNew(zip, o =>
             {
                 o.EncryptionAlgorithm = "ZipCrypto";
                 o.Password = TestSecrets.Fixed(7);
@@ -231,7 +231,7 @@ public class ZipRoundtripTests : IDisposable
         var payload = new byte[1024 * 1024];
         RandomNumberGenerator.Fill(payload);
 
-        using (var w = ArchiveWriter.CreateNew(zip, o =>
+        using (var w = GeneralZipWriter.CreateNew(zip, o =>
                {
                    o.EncryptionAlgorithm = "SM4-GM";
                    o.Password = password;
@@ -241,7 +241,7 @@ public class ZipRoundtripTests : IDisposable
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip, o => o.Password = password);
+        using var r = GeneralZipReader.Open(zip, o => o.Password = password);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
         s.CopyTo(ms);
@@ -252,13 +252,13 @@ public class ZipRoundtripTests : IDisposable
     public void TestAll_ValidatesCrc()
     {
         var zip = Path.Combine(_dir, "crc.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("ok.txt", new MemoryStream(Encoding.UTF8.GetBytes("healthy")), 7);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         var result = r.TestAll();
         Assert.Equal(0, result.FailedCount);
     }
@@ -267,14 +267,14 @@ public class ZipRoundtripTests : IDisposable
     public void UnsafeEntryPaths_Rejected()
     {
         var zip = Path.Combine(_dir, "evil.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             w.AddStream("../escape.txt", new MemoryStream(Encoding.UTF8.GetBytes("evil")), 4);
             w.Finish();
         }
 
         var dest = Path.Combine(_dir, "out-evil");
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         var result = r.ExtractToDirectory(dest, new ExtractionOptions { ErrorPolicy = ErrorPolicy.SkipAll });
 
         Assert.Equal(1, result.FailedCount);

@@ -32,7 +32,7 @@ public class InteropOracleTests : IDisposable
         var zip = Path.Combine(_dir, "ours.zip");
         var payload = Encoding.UTF8.GetBytes("微软官方库可读性验证 payload");
 
-        using (var w = ArchiveWriter.CreateNew(zip, o => o.ArchiveComment = "oracle"))
+        using (var w = GeneralZipWriter.CreateNew(zip, o => o.ArchiveComment = "oracle"))
         {
             w.AddStream("data/hello.txt", new MemoryStream(payload), payload.Length);
             w.AddStream("data/more/inner.txt", new MemoryStream(Encoding.UTF8.GetBytes("nested")), 6);
@@ -67,7 +67,7 @@ public class InteropOracleTests : IDisposable
             stream.Write(payload, 0, payload.Length);
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         Assert.Equal("plain/nested.txt", r.Entries[0].FullName);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
@@ -90,7 +90,7 @@ public class InteropOracleTests : IDisposable
             writer.Write(payload, 0, payload.Length);
         }
 
-        using var r = ArchiveReader.Open(zip);
+        using var r = GeneralZipReader.Open(zip);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
         s.CopyTo(ms);
@@ -103,7 +103,7 @@ public class InteropOracleTests : IDisposable
         // 大条目触发 Zip64 路径（写入 260MB 代价高，改为验证标准 Zip64 extra 的结构写入——
         // 用 >4GB 模拟代价过高，此处退化为多目录结构完整性验证）
         var zip = Path.Combine(_dir, "ours-multi.zip");
-        using (var w = ArchiveWriter.CreateNew(zip))
+        using (var w = GeneralZipWriter.CreateNew(zip))
         {
             for (var i = 0; i < 200; i++)
             {

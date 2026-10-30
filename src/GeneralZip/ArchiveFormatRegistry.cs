@@ -9,12 +9,12 @@ namespace GeneralZip;
 /// 格式提供者注册表。内置格式预注册；<see cref="Register"/> 注入第三方格式。
 /// 探测顺序：签名优先（按注册顺序），扩展名兜底。线程安全。
 /// </summary>
-public sealed class ArchiveFormatRegistry
+public sealed class GeneralZipFormatRegistry
 {
     private readonly object _lock = new();
     private readonly List<IArchiveFormat> _formats = new();
 
-    internal ArchiveFormatRegistry(bool populateBuiltins)
+    internal GeneralZipFormatRegistry(bool populateBuiltins)
     {
         if (populateBuiltins)
         {
@@ -30,7 +30,7 @@ public sealed class ArchiveFormatRegistry
         }
     }
 
-    public static ArchiveFormatRegistry Default { get; } = new(populateBuiltins: true);
+    public static GeneralZipFormatRegistry Default { get; } = new(populateBuiltins: true);
 
     /// <summary>注册格式提供者（重复注册同名格式将覆盖旧的）。</summary>
     public void Register(IArchiveFormat format)

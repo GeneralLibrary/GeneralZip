@@ -79,7 +79,7 @@ public class NativeFixtureTests
             expectedBin[i] = (byte)(lcg >> 24);
         }
 
-        using var reader = ArchiveReader.Open(path, o =>
+        using var reader = GeneralZipReader.Open(path, o =>
         {
             if (encrypted) o.Password = FixturePassword;
         });
@@ -149,7 +149,7 @@ public class NativeFixtureTests
             expectedBin[i] = (byte)(lcg >> 24);
         }
 
-        using var reader = ArchiveReader.Open(path, o => o.Password = FixturePassword);
+        using var reader = GeneralZipReader.Open(path, o => o.Password = FixturePassword);
         // 7z writer adds a directory entry for the prefix: readme.txt + data/ + data/binary.bin
         Assert.Equal(3, reader.Entries.Count);
         Assert.Equal(2, reader.Entries.Count(e => !e.IsDirectory));

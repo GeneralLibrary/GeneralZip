@@ -12,7 +12,7 @@ namespace GeneralZip;
 /// <para>
 /// <see cref="Initialize"/> 完成内置格式/加密算法注册（幂等，可重复调用）；
 /// 随后即可使用一行式 API（<see cref="CompressAsync"/>/<see cref="ExtractAsync"/> 等），
-/// 需要事件与精细控制时使用 <see cref="ArchiveReader"/> / <see cref="ArchiveWriter"/>。
+/// 需要事件与精细控制时使用 <see cref="GeneralZipReader"/> / <see cref="GeneralZipWriter"/>。
 /// </para>
 /// <code>
 /// GeneralZip.Initialize();
@@ -36,24 +36,24 @@ public static class GeneralZip
         }
 
         // 触发两个默认注册表的静态装配
-        _ = ArchiveFormatRegistry.Default;
-        _ = EncryptionRegistry.Default;
+        _ = GeneralZipFormatRegistry.Default;
+        _ = GeneralZipEncryptionRegistry.Default;
     }
 
     /// <summary>组件版本。</summary>
     public static Version Version => typeof(GeneralZip).Assembly.GetName().Version ?? new Version(0, 0, 0);
 
     /// <summary>默认格式注册表（可注册自定义格式与原生 7z/RAR 提供者）。</summary>
-    public static ArchiveFormatRegistry Registry => ArchiveFormatRegistry.Default;
+    public static GeneralZipFormatRegistry Registry => GeneralZipFormatRegistry.Default;
 
     /// <summary>默认加密算法注册表（ZipCrypto / WinZip AES / SM4-GM 已内置）。</summary>
-    public static EncryptionRegistry Encryption => EncryptionRegistry.Default;
+    public static GeneralZipEncryptionRegistry Encryption => GeneralZipEncryptionRegistry.Default;
 
     /// <summary>探测归档格式：魔数优先，扩展名兜底。无法识别返回 null。</summary>
     public static ArchiveFormatInfo? DetectFormat(string path)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));
-        var reg = ArchiveFormatRegistry.Default;
+        var reg = GeneralZipFormatRegistry.Default;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
         return (reg.Detect(stream) ?? reg.DetectByExtension(path))?.Info;
     }
@@ -62,7 +62,7 @@ public static class GeneralZip
     public static ArchiveFormatInfo? DetectFormat(Stream stream)
     {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
-        var reg = ArchiveFormatRegistry.Default;
+        var reg = GeneralZipFormatRegistry.Default;
         long pos = 0;
         if (stream.CanSeek)
         {
@@ -95,7 +95,7 @@ public static class GeneralZip
     {
         if (sourcePath == null) throw new ArgumentNullException(nameof(sourcePath));
 
-        using var writer = ArchiveWriter.CreateNew(archivePath, configure);
+        using var writer = GeneralZipWriter.CreateNew(archivePath, configure);
 
         if (File.Exists(sourcePath))
         {
@@ -135,7 +135,7 @@ public static class GeneralZip
         ExtractionOptions? extraction = null,
         CancellationToken cancellationToken = default)
     {
-        using var reader = await ArchiveReader.OpenAsync(archivePath, configure, null, null, cancellationToken).ConfigureAwait(false);
+        using var reader = await GeneralZipReader.OpenAsync(archivePath, configure, null, null, cancellationToken).ConfigureAwait(false);
         return reader.ExtractToDirectory(destinationDirectory, extraction, cancellationToken);
     }
 
@@ -145,7 +145,7 @@ public static class GeneralZip
         Action<ArchiveOpenOptions>? configure = null,
         CancellationToken cancellationToken = default)
     {
-        using var reader = ArchiveReader.Open(archivePath, configure);
+        using var reader = GeneralZipReader.Open(archivePath, configure);
         return reader.TestAll(new ExtractionOptions { ErrorPolicy = ErrorPolicy.SkipAll }, cancellationToken);
     }
 }

@@ -46,7 +46,7 @@ await CompressAsync(src, sm4Zip, o =>
     o.KdfIterations = 10_000;               // SM3-PBKDF2 迭代次数
 });
 
-using (var reader = await ArchiveReader.OpenAsync(sm4Zip, o => o.Password = sm4Password))
+using (var reader = await GeneralZipReader.OpenAsync(sm4Zip, o => o.Password = sm4Password))
 {
     Console.WriteLine($"[SM4] SM4-GM archive: {reader.Entries.Count} entries, algorithm {reader.Entries[0].EncryptionAlgorithm}");
     var extractDir = Path.Combine(work, "sm4-out");
@@ -57,7 +57,7 @@ using (var reader = await ArchiveReader.OpenAsync(sm4Zip, o => o.Password = sm4P
 // ===== 3) 事件驱动：进度 + 密码协商 =====
 var aesZip = Path.Combine(work, "event-demo.zip");
 var aesPassword = DemoPassword("AES");
-using (var writer = ArchiveWriter.CreateNew(aesZip, o =>
+using (var writer = GeneralZipWriter.CreateNew(aesZip, o =>
 {
     o.EncryptionAlgorithm = "WinZipAES256"; // 主流通用方案（WinZip/7-Zip/Windows 可读）
     o.Password = aesPassword;
@@ -77,7 +77,7 @@ using (var writer = ArchiveWriter.CreateNew(aesZip, o =>
 
 Console.WriteLine();
 
-using (var reader = ArchiveReader.Open(aesZip, null, r =>
+using (var reader = GeneralZipReader.Open(aesZip, null, r =>
        {
            // 整包加密格式请在 initialize 钩子中订阅（ZIP 分条目加密也可打开后订阅）
            r.PasswordRequired += (_, e) =>
@@ -106,7 +106,7 @@ if (NativeCoreLoader.IsAvailable)
 {
     var sevenZip = Path.Combine(work, "arch.7z");
     var sevenZPassword = DemoPassword("7Z");
-    using (var w = ArchiveWriter.CreateNew(sevenZip, o =>
+    using (var w = GeneralZipWriter.CreateNew(sevenZip, o =>
            {
                o.Password = sevenZPassword;     // 7z 标准 AES-256（Rust 核心：sevenz-rust2）
            }, formatName: "7Z"))
@@ -115,7 +115,7 @@ if (NativeCoreLoader.IsAvailable)
         await w.FinishAsync();
     }
 
-    using (var r = ArchiveReader.Open(sevenZip, o => o.Password = sevenZPassword))
+    using (var r = GeneralZipReader.Open(sevenZip, o => o.Password = sevenZPassword))
     {
         var result = await r.ExtractToDirectoryAsync(Path.Combine(work, "7z-out"));
         Console.WriteLine($"[7z] extracted {result.ProcessedCount} entries (LZMA2 + AES-256)");
@@ -125,7 +125,7 @@ if (NativeCoreLoader.IsAvailable)
     var bigFile = Path.Combine(work, "big.log");
     await File.WriteAllTextAsync(bigFile, string.Concat(Enumerable.Repeat("log line lorem ipsum ", 5000)));
     var xzFile = bigFile + ".xz";
-    using (var w = ArchiveWriter.CreateNew(xzFile))
+    using (var w = GeneralZipWriter.CreateNew(xzFile))
     {
         using var content = File.OpenRead(bigFile);
         w.AddStream("big.log", content, content.Length);

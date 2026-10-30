@@ -5,16 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using GeneralZip.Abstractions;
 using GeneralZip.Internal;
+using GeneralZip.Internal;
 
 namespace GeneralZip;
 
 /// <summary>
 /// 归档读取门面。格式探测 → 格式级读取器 → 事件/策略编排的唯一入口。
-/// 事件：EntryStarted / EntryProgress / EntryCompleted / EntryFailed /
-///       OverallProgress / PasswordRequired / OverwriteQuery / ErrorReport。
-/// 本类型非线程安全；不同实例可并发。
 /// </summary>
-public sealed class ArchiveReader : IDisposable
+public sealed class GeneralZipReader : IDisposable
 {
     private IArchiveReader _inner;
     private FileStream? _ownedStream; // set when opened by path; closed on Dispose
@@ -22,7 +20,7 @@ public sealed class ArchiveReader : IDisposable
     private readonly PasswordGate _passwords;
     private EventHandler<PasswordRequiredEventArgs>? _passwordRequired;
 
-    private ArchiveReader(ArchiveOpenOptions options)
+    private GeneralZipReader(ArchiveOpenOptions options)
     {
         _inner = new NullInner();
         _options = options;
@@ -40,12 +38,12 @@ public sealed class ArchiveReader : IDisposable
     /// 订阅事件的钩子，在格式解析前执行——整包加密格式（7z 头部加密等）在 Open 期间就可能触发
     /// <see cref="PasswordRequired"/>，请在钩子中完成事件订阅。
     /// </param>
-    /// <param name="registry">自定义格式注册表；null 用 <see cref="ArchiveFormatRegistry.Default"/>。</param>
-    public static ArchiveReader Open(
+    /// <param name="registry">自定义格式注册表；null 用 <see cref="GeneralZipFormatRegistry.Default"/>。</param>
+    public static GeneralZipReader Open(
         string path,
         Action<ArchiveOpenOptions>? configure = null,
-        Action<ArchiveReader>? initialize = null,
-        ArchiveFormatRegistry? registry = null)
+        Action<GeneralZipReader>? initialize = null,
+        GeneralZipFormatRegistry? registry = null)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));
 
@@ -54,10 +52,10 @@ public sealed class ArchiveReader : IDisposable
         options.SourceName = System.IO.Path.GetFileName(path);
 
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
-        ArchiveReader? reader = null;
+        GeneralZipReader? reader = null;
         try
         {
-            reader = new ArchiveReader(options);
+            reader = new GeneralZipReader(options);
             AttachCore(reader, stream, options, initialize, registry, path, formatName: null);
             // Opening by path: the reader owns the FileStream. Format readers are created
             // with ownsStream:false, so the facade must close the stream on Dispose.
@@ -73,27 +71,27 @@ public sealed class ArchiveReader : IDisposable
     }
 
     /// <summary>从流打开归档。formatName 给定时跳过签名探测。</summary>
-    public static ArchiveReader Open(
+    public static GeneralZipReader Open(
         Stream stream,
         string? formatName = null,
         Action<ArchiveOpenOptions>? configure = null,
-        Action<ArchiveReader>? initialize = null,
-        ArchiveFormatRegistry? registry = null)
+        Action<GeneralZipReader>? initialize = null,
+        GeneralZipFormatRegistry? registry = null)
     {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
         var options = new ArchiveOpenOptions();
         configure?.Invoke(options);
-        var reader = new ArchiveReader(options);
+        var reader = new GeneralZipReader(options);
         AttachCore(reader, stream, options, initialize, registry, sourcePath: null, formatName);
         return reader;
     }
 
     /// <summary>异步打开（内部为同步 IO；签名与异步 API 风格保持一致便于调用方切换）。</summary>
-    public static Task<ArchiveReader> OpenAsync(
+    public static Task<GeneralZipReader> OpenAsync(
         string path,
         Action<ArchiveOpenOptions>? configure = null,
-        Action<ArchiveReader>? initialize = null,
-        ArchiveFormatRegistry? registry = null,
+        Action<GeneralZipReader>? initialize = null,
+        GeneralZipFormatRegistry? registry = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -101,15 +99,15 @@ public sealed class ArchiveReader : IDisposable
     }
 
     private static void AttachCore(
-        ArchiveReader reader,
+        GeneralZipReader reader,
         Stream stream,
         ArchiveOpenOptions options,
-        Action<ArchiveReader>? initialize,
-        ArchiveFormatRegistry? registry,
+        Action<GeneralZipReader>? initialize,
+        GeneralZipFormatRegistry? registry,
         string? sourcePath,
         string? formatName)
     {
-        var reg = registry ?? ArchiveFormatRegistry.Default;
+        var reg = registry ?? GeneralZipFormatRegistry.Default;
 
         IArchiveFormat format;
         if (formatName != null)
@@ -143,7 +141,7 @@ public sealed class ArchiveReader : IDisposable
                 {
                     throw new UnsupportedFormatException(
                         $"Unrecognized archive format{(sourcePath != null ? $": {sourcePath}" : string.Empty)}. " +
-                        "Register a custom format via ArchiveFormatRegistry, or specify one explicitly with Open(stream, formatName).");
+                        "Register a custom format via GeneralZipFormatRegistry, or specify one explicitly with Open(stream, formatName).");
                 }
             }
         }
@@ -615,13 +613,13 @@ public sealed class ArchiveReader : IDisposable
     /// <summary>条目内字节进度中继：聚合器 + EntryProgress 事件。</summary>
     private sealed class EntryProgressRelay
     {
-        private readonly ArchiveReader _owner;
+        private readonly GeneralZipReader _owner;
         private readonly IArchiveEntry _entry;
         private readonly ProgressAggregator _aggregator;
         private long _bytes;
         private long _lastEventBytes;
 
-        public EntryProgressRelay(ArchiveReader owner, IArchiveEntry entry, ProgressAggregator aggregator)
+        public EntryProgressRelay(GeneralZipReader owner, IArchiveEntry entry, ProgressAggregator aggregator)
         {
             _owner = owner;
             _entry = entry;

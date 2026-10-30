@@ -52,13 +52,13 @@ public class NativeCodecTests : IDisposable
         var payload = new byte[120_000];
         RandomNumberGenerator.Fill(payload);
 
-        using (var w = ArchiveWriter.CreateNew(path))
+        using (var w = GeneralZipWriter.CreateNew(path))
         {
             w.AddStream("c.bin", new MemoryStream(payload), payload.Length);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(path);
+        using var r = GeneralZipReader.Open(path);
         Assert.Equal(formatName, r.Format.Name);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
@@ -72,14 +72,14 @@ public class NativeCodecTests : IDisposable
         if (SkipIfNoCore()) return;
 
         var tbz = Path.Combine(_dir, "e.tar.bz2");
-        using (var w = ArchiveWriter.CreateNew(tbz))
+        using (var w = GeneralZipWriter.CreateNew(tbz))
         {
             var payload = Encoding.UTF8.GetBytes("bz2 tar");
             w.AddStream("e/f.txt", new MemoryStream(payload), payload.Length);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(tbz);
+        using var r = GeneralZipReader.Open(tbz);
         Assert.Equal("TAR.BZ2", r.Format.Name);
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
@@ -93,13 +93,13 @@ public class NativeCodecTests : IDisposable
         if (SkipIfNoCore()) return;
 
         var tgz = Path.Combine(_dir, "b.tar.gz");
-        using (var w = ArchiveWriter.CreateNew(tgz))
+        using (var w = GeneralZipWriter.CreateNew(tgz))
         {
             w.AddStream("x.txt", new MemoryStream(new byte[10000]), 10000);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(tgz);
+        using var r = GeneralZipReader.Open(tgz);
         Assert.Equal("TAR.GZ", r.Format.Name);
 
         var dest = Path.Combine(_dir, "out-tgz");

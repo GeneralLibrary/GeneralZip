@@ -18,7 +18,7 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ 门面层   GeneralZip (静态引导/门面) /                        │ 一行式与流式 API
-│          ArchiveReader / ArchiveWriter                       │
+│          GeneralZipReader / GeneralZipWriter                 │
 ├────────────────────────────────────────────────────────────┤
 │ 事件层   EntryStarted / EntryProgress / EntryCompleted /    │ 进度
 │          EntryFailed / OverallProgress /                    │ 交互

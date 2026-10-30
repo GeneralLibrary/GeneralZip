@@ -28,14 +28,14 @@ public class FormatTests : IDisposable
     public void Tar_Roundtrip()
     {
         var tar = Path.Combine(_dir, "a.tar");
-        using (var w = ArchiveWriter.CreateNew(tar))
+        using (var w = GeneralZipWriter.CreateNew(tar))
         {
             var payload = Encoding.UTF8.GetBytes("tar 内容");
             w.AddStream("dir/hello.txt", new MemoryStream(payload), payload.Length);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(tar);
+        using var r = GeneralZipReader.Open(tar);
         Assert.Equal("TAR", r.Format.Name);
         Assert.True(r.Entries.Count >= 1);
         using var s = r.OpenEntryStream(r.Entries.First(e => e.FullName == "dir/hello.txt"));
@@ -48,14 +48,14 @@ public class FormatTests : IDisposable
     public void TarGz_SignatureDetects_And_Roundtrip()
     {
         var tgz = Path.Combine(_dir, "b.tar.gz");
-        using (var w = ArchiveWriter.CreateNew(tgz))
+        using (var w = GeneralZipWriter.CreateNew(tgz))
         {
             w.AddStream("x.txt", new MemoryStream(new byte[10000]), 10000);
             w.Finish();
         }
 
         // 自动探测（tar.gz 与单文件 gz 都有 gzip 魔数，靠解压后 ustar 魔数区分）
-        using var r = ArchiveReader.Open(tgz);
+        using var r = GeneralZipReader.Open(tgz);
         Assert.Equal("TAR.GZ", r.Format.Name);
 
         var dest = Path.Combine(_dir, "out-tgz");
@@ -69,13 +69,13 @@ public class FormatTests : IDisposable
         var gz = Path.Combine(_dir, "single.txt.gz");
         var payload = Encoding.UTF8.GetBytes("single file gzip 内容");
 
-        using (var w = ArchiveWriter.CreateNew(gz))
+        using (var w = GeneralZipWriter.CreateNew(gz))
         {
             w.AddStream("single.txt", new MemoryStream(payload), payload.Length);
             w.Finish();
         }
 
-        using var r = ArchiveReader.Open(gz);
+        using var r = GeneralZipReader.Open(gz);
         Assert.Equal("GZIP", r.Format.Name);
         Assert.Equal("single.txt", r.Entries[0].FullName); // 从文件名剥扩展名
         using var s = r.OpenEntryStream(r.Entries[0]);
@@ -112,7 +112,7 @@ public class FormatTests : IDisposable
         var fake = Path.Combine(_dir, "fake.bin");
         File.WriteAllBytes(fake, new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A });
 
-        Assert.Throws<UnsupportedFormatException>(() => ArchiveReader.Open(fake));
+        Assert.Throws<UnsupportedFormatException>(() => GeneralZipReader.Open(fake));
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class FormatTests : IDisposable
             gzStream.Write(payload, 0, payload.Length);
         }
 
-        using var r = ArchiveReader.Open(gz, o => o.SourceName = "sys.txt.gz");
+        using var r = GeneralZipReader.Open(gz, o => o.SourceName = "sys.txt.gz");
         using var s = r.OpenEntryStream(r.Entries[0]);
         using var ms = new MemoryStream();
         s.CopyTo(ms);

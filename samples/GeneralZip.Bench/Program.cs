@@ -158,14 +158,14 @@ static void TryDelete(string file)
 
 static void WriteArchive(BenchItem item, string file, byte[] data)
 {
-    using var writer = ArchiveWriter.CreateNew(file, item.Configure, formatName: item.FormatName);
+    using var writer = GeneralZipWriter.CreateNew(file, item.Configure, formatName: item.FormatName);
     writer.AddStream("data.bin", new MemoryStream(data), data.Length);
     writer.Finish();
 }
 
 static long ReadArchive(string file, BenchItem item)
 {
-    using var reader = ArchiveReader.Open(file, o => o.Password = Pw());
+    using var reader = GeneralZipReader.Open(file, o => o.Password = Pw());
     long total = 0;
     foreach (var entry in reader.Entries)
     {

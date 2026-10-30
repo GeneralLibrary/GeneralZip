@@ -18,14 +18,14 @@ internal sealed class ZipReader : IArchiveReader
     private readonly bool _ownsStream;
     private readonly ArchiveOpenOptions _options;
     private readonly List<ZipEntryView> _entries = new();
-    private readonly EncryptionRegistry _encryption;
+    private readonly GeneralZipEncryptionRegistry _encryption;
 
-    public ZipReader(Stream stream, ArchiveOpenOptions options, bool ownsStream, EncryptionRegistry? encryption = null)
+    public ZipReader(Stream stream, ArchiveOpenOptions options, bool ownsStream, GeneralZipEncryptionRegistry? encryption = null)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _ownsStream = ownsStream;
-        _encryption = encryption ?? EncryptionRegistry.Default;
+        _encryption = encryption ?? GeneralZipEncryptionRegistry.Default;
 
         if (!stream.CanSeek)
         {

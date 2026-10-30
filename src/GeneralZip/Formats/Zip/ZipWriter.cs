@@ -23,7 +23,7 @@ internal sealed class ZipWriter : IArchiveWriter
     private readonly CountingOutput _counter;
     private bool _finished;
 
-    public ZipWriter(Stream output, ArchiveWriteOptions options, bool ownsStream, EncryptionRegistry? encryption = null)
+    public ZipWriter(Stream output, ArchiveWriteOptions options, bool ownsStream, GeneralZipEncryptionRegistry? encryption = null)
     {
         _output = output ?? throw new ArgumentNullException(nameof(output));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -36,7 +36,7 @@ internal sealed class ZipWriter : IArchiveWriter
             throw new ArgumentException("Output stream must be writable", nameof(output));
         }
 
-        var provider = options.ResolveProvider(encryption ?? EncryptionRegistry.Default);
+        var provider = options.ResolveProvider(encryption ?? GeneralZipEncryptionRegistry.Default);
         if (provider != null && provider.AlgorithmId == "ZipCrypto" && !options.AllowWeakZipCrypto)
         {
             throw new NotSupportedException(

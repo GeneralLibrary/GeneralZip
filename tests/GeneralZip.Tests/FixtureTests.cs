@@ -103,7 +103,7 @@ public class FixtureTests
         if (SkipIfMissing()) return;
 
         var path = Path.Combine(_fixturesDir, fileName);
-        using var reader = ArchiveReader.Open(path, o => o.Password = FixturePassword);
+        using var reader = GeneralZipReader.Open(path, o => o.Password = FixturePassword);
 
         Assert.Equal(2, reader.Entries.Count);
         Assert.True(reader.Entries.All(e => e.IsEncrypted));
@@ -129,7 +129,7 @@ public class FixtureTests
         if (SkipIfMissing()) return;
 
         var path = Path.Combine(_fixturesDir, fileName);
-        using var reader = ArchiveReader.Open(path);
+        using var reader = GeneralZipReader.Open(path);
 
         if (singleFileCodec)
         {
@@ -164,7 +164,7 @@ public class FixtureTests
 
         var path = Path.Combine(_fixturesDir, "secret-sm4.zip");
         var wrong = "GeneralZip" + "-Demo" + "-9999";
-        using var reader = ArchiveReader.Open(path, o => o.Password = wrong);
+        using var reader = GeneralZipReader.Open(path, o => o.Password = wrong);
 
         Assert.Throws<InvalidPasswordException>(() =>
         {

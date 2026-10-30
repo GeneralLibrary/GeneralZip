@@ -8,15 +8,15 @@ namespace GeneralZip;
 /// 加密算法注册表。内置提供者预注册；第三方算法经 <see cref="Register"/> 注入后即可被所有格式使用。
 /// 线程安全。
 /// </summary>
-public sealed class EncryptionRegistry
+public sealed class GeneralZipEncryptionRegistry
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, IEncryptionProvider> _byId = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<ushort, List<IEncryptionProvider>> _byZipExtraField = new();
 
-    public EncryptionRegistry() { }
+    public GeneralZipEncryptionRegistry() { }
 
-    internal EncryptionRegistry(bool populateBuiltins)
+    internal GeneralZipEncryptionRegistry(bool populateBuiltins)
     {
         if (populateBuiltins)
         {
@@ -27,7 +27,7 @@ public sealed class EncryptionRegistry
         }
     }
 
-    public static EncryptionRegistry Default { get; } = new(populateBuiltins: true);
+    public static GeneralZipEncryptionRegistry Default { get; } = new(populateBuiltins: true);
 
     /// <summary>注册提供者；同 AlgorithmId 重复注册将覆盖。</summary>
     public void Register(IEncryptionProvider provider)
