@@ -54,7 +54,7 @@ if (-not $SkipNative) {
     finally { Pop-Location }
 
     # drop artifact under runtimes/win-x64/native (for packaging)
-    $nativeOut = Join-Path $repoRoot "src\GeneralZip.Native\runtimes\win-x64\native"
+    $nativeOut = Join-Path $repoRoot "src\GeneralZip\runtimes\win-x64\native"
     New-Item -ItemType Directory -Force -Path $nativeOut | Out-Null
     Copy-Item (Join-Path $repoRoot "native\generalzip-native\target\release\generalzip_native.dll") $nativeOut -Force
     Write-Host "native core ready: $nativeOut\generalzip_native.dll"

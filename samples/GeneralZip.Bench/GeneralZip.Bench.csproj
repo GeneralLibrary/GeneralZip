@@ -11,7 +11,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
-    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
   </ItemGroup>
 
   <!-- 本地构建时携带 cargo 产物 -->

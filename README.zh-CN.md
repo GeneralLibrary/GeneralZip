@@ -25,14 +25,14 @@
 ## 安装
 
 ```
-dotnet add package GeneralZip          # 核心包（纯托管）
-dotnet add package GeneralZip.Native   # 可选：7z/RAR/BZ2/XZ/ZSTD/LZ4（Rust 核心）
+dotnet add package GeneralZip
 ```
 
 目标框架 `netstandard2.0` 与 `net8.0`。
 
-> 原生包内置 win-x64、linux-x64、linux-musl-x64、osx-x64、osx-arm64 五个平台的预编译核心。
-> 启动时调用一次 `GeneralZipNative.Initialize()` —— 若平台无对应核心，7z/RAR 与这些编解码优雅降级，其余能力不受影响。
+> 一个包，能力齐全。包内已捆绑 win-x64、linux-x64、linux-musl-x64、osx-x64、osx-arm64
+> 五个平台的预编译 Rust 原生核心，`GeneralZip.Initialize()` 会自动加载；
+> 若平台无对应核心，7z/RAR 与原生编解码优雅降级，其余能力不受影响。
 
 ## 快速开始
 
@@ -184,7 +184,7 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 2. 应用目录下的 `runtimes/<RID>/native/`；
 3. `GENERALZIP_NATIVE` 环境变量指向的路径，
 
-然后启动时调用一次 `GeneralZipNative.Initialize()`。
+然后启动时调用一次 `GeneralZip.Initialize()`（一行式 API 内部已自动调用）。
 
 ## 示例文件
 
@@ -209,8 +209,7 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 ## 项目结构
 
 ```
-src/GeneralZip/           核心库（纯托管，零第三方 NuGet）
-src/GeneralZip.Native/    Rust 核心绑定（P/Invoke，优雅降级）
+src/GeneralZip/           组件库（托管核心 + 内置 Rust 原生核心绑定）
 native/generalzip-native/ Rust cdylib：7z/bzip2/xz/zstd/lz4 编解码（C ABI）
 native/dlltool-shim-rs/   windows-gnu raw-dylib 构建辅助
 tests/                    73 个测试：标准向量、互操作 oracle、事件、fixtures

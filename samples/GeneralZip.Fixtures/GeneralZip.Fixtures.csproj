@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
-    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -32,8 +32,8 @@ await CompressAsync(src, zip, o => o.Level = CompressionLevelChoice.Optimal);
 Console.WriteLine($"[one-liner] compressed: {zip} ({new FileInfo(zip).Length}B, format {DetectFormat(zip)?.Name})");
 
 // ===== 1.5) 启动引导说明 =====
-// GeneralZip.Initialize() 为幂等引导入口（确保内置格式/算法注册），放在程序启动处调用一次即可。
-// 原生能力（7z/RAR/xz 写）另需引用 GeneralZip.Native 并调用 GeneralZipNative.Initialize()。
+// GeneralZip.Initialize() 为幂等引导入口（确保内置格式/算法注册，并自动加载内置 Rust 原生核心），
+// 放在程序启动处调用一次即可；一行式 API 内部也会自动调用。
 
 // ===== 2) 国密 SM4 加密 ZIP（加密写 → 解密读） =====
 var sm4Zip = Path.Combine(work, "secret-sm4.zip");

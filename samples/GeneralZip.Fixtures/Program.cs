@@ -108,8 +108,6 @@ static string DemoPassword() =>
     Environment.GetEnvironmentVariable("GENERALZIP_FIXTURE_PASSWORD")
     ?? ("GeneralZip" + "-Demo" + "-2026");
 
-static string FixturesDir() => Env.FixturesDir;
-
 static string FindRepoRoot()
 {
     var dir = new DirectoryInfo(AppContext.BaseDirectory);

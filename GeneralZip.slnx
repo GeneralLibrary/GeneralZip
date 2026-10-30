@@ -5,7 +5,6 @@
     <Project Path="samples/GeneralZip.Samples/GeneralZip.Samples.csproj" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/GeneralZip.Native/GeneralZip.Native.csproj" />
     <Project Path="src/GeneralZip/GeneralZip.csproj" />
   </Folder>
   <Folder Name="/tests/">

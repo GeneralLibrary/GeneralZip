@@ -6,8 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <Description>Cross-format compression library for .NET: ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4 with ZipCrypto, WinZip AES, Chinese national crypto (SM4-GM) and an event-driven API. 跨格式压缩组件：ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4，支持 ZipCrypto、WinZip AES、国密 SM4-GM 加密与事件驱动 API。</Description>
-    <PackageTags>zip;7z;rar;compression;archive;sm4;guomi;encryption;tar;gzip;zstd;lz4;bzip2;xz</PackageTags>
+    <Description>Cross-format compression library for .NET: ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4 with ZipCrypto, WinZip AES, Chinese national crypto (SM4-GM), an event-driven API and a built-in Rust native core (7z read/write with AES-256, RAR read, bzip2/xz/zstd/lz4 codecs; degrades gracefully when the core binary is absent). 跨格式压缩组件：ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4，支持 ZipCrypto、WinZip AES、国密 SM4-GM 加密与事件驱动 API；内置 Rust 原生核心（7z 读写含 AES-256、RAR 读取、bzip2/xz/zstd/lz4 编解码，核心缺失时优雅降级）。</Description>
+    <PackageTags>zip;7z;rar;compression;archive;sm4;guomi;encryption;tar;gzip;zstd;lz4;bzip2;xz;native;rust</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/GeneralLibrary/GeneralZip.git</RepositoryUrl>
     <PackageProjectUrl>https://github.com/GeneralLibrary/GeneralZip</PackageProjectUrl>
@@ -22,11 +22,26 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
+  <!--
+    Native core binaries are packed as runtimes/<RID>/native/* so the consuming app
+    gets them via the standard .NET RID deployment model. The CI release workflow
+    builds the Rust core per RID and populates this folder before packing.
+    Local builds: run build/build.ps1 (copies the dll for the current RID).
+  -->
+  <ItemGroup>
+    <None Include="runtimes\**\native\*"
+          Pack="true"
+          PackagePath="runtimes"
+          Visible="false"
+          Condition="Exists('runtimes\win-x64\native\generalzip_native.dll')" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Design constraint: no third-party NuGet dependencies other than Microsoft-maintained
          packages. SM3/SM4/SM-HMAC/PBKDF2-SM3 and the TAR/GZip containers are pure C# in this
-         project; bzip2/xz/zstd/lz4 codecs go through the Rust native core (GeneralZip.Native). -->
+         project; bzip2/xz/zstd/lz4 codecs go through the bundled Rust native core. -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.0" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 

@@ -26,7 +26,8 @@ public static class GeneralZip
 
     /// <summary>
     /// 启动引导：确保内置格式提供者与加密算法已注册（幂等、线程安全）。
-    /// Default 注册表本就随首次访问自动装配，此调用用于显式化的启动时机与后续扩展点。
+    /// 同时尝试加载内置 Rust 原生核心（7z/RAR/原生编解码）；核心二进制缺失时静默降级，
+    /// 纯托管能力不受影响（可用 <see cref="GeneralZip.Native.NativeCoreLoader.IsAvailable"/> 探测）。
     /// </summary>
     public static void Initialize()
     {
@@ -38,6 +39,10 @@ public static class GeneralZip
         // 触发两个默认注册表的静态装配
         _ = GeneralZipFormatRegistry.Default;
         _ = GeneralZipEncryptionRegistry.Default;
+
+        // 原生引导（幂等；加载失败仅返回 false，不抛异常）。
+        // global:: 限定：类名 GeneralZip 会遮蔽同名命名空间。
+        _ = global::GeneralZip.Native.GeneralZipNative.Initialize();
     }
 
     /// <summary>组件版本。</summary>

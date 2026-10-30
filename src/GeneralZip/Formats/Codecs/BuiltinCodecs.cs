@@ -13,13 +13,13 @@ internal static class NativeCodecRouter
 {
     public static void EnsureCore()
     {
-        // 通过桥接委托间接访问原生核心，避免核心包对 Native 包的编译期依赖：
-        // GeneralZip.Native 在 Initialize 时注入 NativeBridge 的实现。
+        // 通过桥接委托间接访问原生核心，保持编解码实现与 P/Invoke 细节的边界：
+        // GeneralZipNative.Initialize()（GeneralZip.Initialize() 已自动调用）注入 NativeBridge 的实现。
         if (!NativeBridgeProbe.IsAvailableSafe())
         {
             throw new NativeCoreMissingException(
-                "This codec format requires the Rust native core (generalzip_native). " +
-                "Reference the GeneralZip.Native package and call GeneralZipNative.Initialize() at startup, " +
+                "This codec format requires the Rust native core (generalzip_native), which was not found next to the application. " +
+                "Place generalzip_native.dll/.so/.dylib in the app directory or under runtimes/<RID>/native/, " +
                 "or re-save the archive as ZIP/TAR.GZ or another pure-managed format.");
         }
     }
@@ -32,7 +32,7 @@ internal static class NativeCodecRouter
         if (handler == null || !handler(codec, source, destination))
         {
             throw new NativeCoreMissingException(
-                $"The native core does not support {codec} encoding or is not loaded. Reference GeneralZip.Native and call GeneralZipNative.Initialize().");
+                $"The native core does not support {codec} encoding or is not loaded. Place generalzip_native.dll/.so/.dylib next to the app or under runtimes/<RID>/native/.");
         }
     }
 
@@ -42,7 +42,7 @@ internal static class NativeCodecRouter
         if (handler == null || !handler(codec, source, destination))
         {
             throw new NativeCoreMissingException(
-                $"The native core does not support {codec} decoding or is not loaded. Reference GeneralZip.Native and call GeneralZipNative.Initialize().");
+                $"The native core does not support {codec} decoding or is not loaded. Place generalzip_native.dll/.so/.dylib next to the app or under runtimes/<RID>/native/.");
         }
     }
 }

@@ -3,8 +3,9 @@ name: Release
 # Triggered by pushing a version tag, e.g. v1.1.0
 #   git tag v1.1.0 && git push origin v1.1.0
 #
-# Pipeline: RID matrix native build → pack NuGet (with native cores inside
-# GeneralZip.Native) → run smoke tests → publish to NuGet.org → GitHub Release.
+# Pipeline: RID matrix native build → pack the single GeneralZip NuGet (native
+# cores embedded under runtimes/<RID>/native) → run smoke tests → publish to
+# NuGet.org → GitHub Release.
 
 on:
   push:
@@ -129,11 +130,11 @@ jobs:
         run: |
           $rids = @('win-x64','linux-x64','linux-musl-x64','osx-x64','osx-arm64')
           foreach ($rid in $rids) {
-            $dest = "src/GeneralZip.Native/runtimes/$rid/native"
+            $dest = "src/GeneralZip/runtimes/$rid/native"
             New-Item -ItemType Directory -Force -Path $dest | Out-Null
             Copy-Item "artifacts/native-core-$rid/*" $dest -Force
           }
-          Get-ChildItem -Recurse src/GeneralZip.Native/runtimes | Select-Object FullName, Length
+          Get-ChildItem -Recurse src/GeneralZip/runtimes | Select-Object FullName, Length
 
       - name: Set version from tag
         shell: pwsh
@@ -145,7 +146,6 @@ jobs:
         run: |
           dotnet build GeneralZip.slnx -c Release -p:Version=${{ env.PACKAGE_VERSION }} --nologo
           dotnet pack src/GeneralZip/GeneralZip.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
-          dotnet pack src/GeneralZip.Native/GeneralZip.Native.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
 
       - name: Smoke test (fresh console app installs packed packages)
         shell: pwsh
@@ -155,14 +155,12 @@ jobs:
           dotnet new console -o $smoke --force
           Push-Location $smoke
           dotnet add package GeneralZip --source "$nugetDir"
-          dotnet add package GeneralZip.Native --source "$nugetDir"
           Set-Content -Path Program.cs -Value @'
           using GeneralZip;
-          using GeneralZip.Native;
           using static GeneralZip.GeneralZip;
 
           Initialize();
-          Console.WriteLine($"native={GeneralZipNative.Initialize()}");
+          Console.WriteLine($"native={GeneralZip.Native.NativeCoreLoader.IsAvailable}");
 
           var dir = Path.Combine(Path.GetTempPath(), "gzp-smoke");
           if (Directory.Exists(dir)) Directory.Delete(dir, true);

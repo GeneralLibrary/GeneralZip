@@ -25,15 +25,15 @@
 ## Installation
 
 ```
-dotnet add package GeneralZip          # core (pure managed)
-dotnet add package GeneralZip.Native   # optional: 7z/RAR/BZ2/XZ/ZSTD/LZ4 via Rust core
+dotnet add package GeneralZip
 ```
 
 Targets `netstandard2.0` and `net8.0`.
 
-> The native package embeds prebuilt cores for win-x64, linux-x64, linux-musl-x64, osx-x64 and osx-arm64.
-> Call `GeneralZipNative.Initialize()` once at startup — if the core is missing for your platform,
-> 7z/RAR and those codecs degrade gracefully; everything else keeps working.
+> One package, everything included. The library bundles prebuilt Rust native cores for
+> win-x64, linux-x64, linux-musl-x64, osx-x64 and osx-arm64; `GeneralZip.Initialize()`
+> loads them automatically. If the core is missing for your platform, 7z/RAR and the
+> native codecs degrade gracefully; everything else keeps working.
 
 ## Quick Start
 
@@ -187,7 +187,7 @@ Place `generalzip_native.dll/.so/.dylib` in one of:
 2. `runtimes/<RID>/native/` under the app directory,
 3. any path referenced by the `GENERALZIP_NATIVE` environment variable,
 
-then call `GeneralZipNative.Initialize()` once at startup.
+then call `GeneralZip.Initialize()` once (already done implicitly by the one-shot APIs).
 
 ## Sample Files
 
@@ -212,8 +212,7 @@ Throughput numbers for all formats (including per-algorithm encryption overhead)
 ## Project Layout
 
 ```
-src/GeneralZip/           Core library (pure managed, zero third-party NuGet)
-src/GeneralZip.Native/    Rust core bindings (P/Invoke, graceful degradation)
+src/GeneralZip/           Library (managed core + bundled Rust native core bindings)
 native/generalzip-native/ Rust cdylib: 7z/bzip2/xz/zstd/lz4 codecs (C ABI)
 native/dlltool-shim-rs/   Build helper for windows-gnu raw-dylib imports
 tests/                    73 tests: standard vectors, interop oracle, events, fixtures

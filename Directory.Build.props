@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <Deterministic>true</Deterministic>
     <Authors>GeneralZip</Authors>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Company>GeneralZip</Company>
     <Product>GeneralZip</Product>
     <!-- Deterministic CI build; inject the commit hash via MinVer-style CI_VERSION if present -->

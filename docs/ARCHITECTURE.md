@@ -39,12 +39,13 @@
 │  Bz2/Xz/Zstd/Lz4 编解码经 NativeBridge 路由到原生核心          │
 │  GZip = .NET GZipStream；TAR/SM3/SM4 = 组件纯 C# 自研          │
 └─────────────────────────────────────────────────────────────┘
-         GeneralZip (零第三方 NuGet)   GeneralZip.Native (P/Invoke 包装)
+         GeneralZip 单包 = 托管核心 + Native/ 目录（P/Invoke 绑定）
 ```
 
 - **门面层**不包含任何格式逻辑，只做编排：格式探测 → 提供者选择 → 事件桥接。
 - **抽象层**是唯一稳定契约，格式/加密实现均可第三方扩展。
-- **GeneralZip 核心包零 P/Invoke**；原生交互完全隔离在 `GeneralZip.Native` 包内。
+- **P/Invoke 全部集中在 `src/GeneralZip/Native/` 目录**；托管编解码层经
+  `NativeBridge` 委托与原生实现解耦，原生核心缺失时优雅降级。
 
 ## 3. 项目结构
 
@@ -55,19 +56,19 @@ GeneralZip.sln
 │  └─ CRYPTO-SPEC.md             SM4-GM 容器二进制规范（国密互通依据）
 ├─ native/generalzip-native/     Rust crate (cdylib, C ABI)
 ├─ src/
-│  ├─ GeneralZip/                核心包（netstandard2.0 + net8.0）
-│  │  ├─ Abstractions/           接口、选项、枚举、ArchiveEntry 基础类型
-│  │  ├─ Events/                 事件参数与进度快照
-│  │  ├─ Crypto/                 KDF、加密提供者、ArchiveCryptoStream
-│  │  ├─ Formats/
-│  │  │  ├─ Zip/                 自研 ZIP 读写（含 Zip64、加密挂接）
-│  │  │  ├─ Tar/                 TAR / TAR.GZ / TAR.BZ2
-│  │  │  └─ Codecs/              GZ/BZ2/XZ/Zstd/LZ4 单文件编解码格式
-│  │  ├─ GeneralZip.cs           启动引导 + 静态门面（一行式 API）
-│  │  ├─ ArchiveReader.cs        读取封装（事件源）
-│  │  ├─ ArchiveWriter.cs        写入封装（事件源）
-│  │  ├─ ArchiveFormatRegistry.cs 格式注册表 + 魔数探测
-│  └─ GeneralZip.Native/         Rust 核心 P/Invoke 包装（能力协商 + 降级）
+│  └─ GeneralZip/                唯一包（netstandard2.0 + net8.0）
+│     ├─ Abstractions/           接口、选项、枚举、ArchiveEntry 基础类型
+│     ├─ Events/                 事件参数与进度快照
+│     ├─ Crypto/                 KDF、加密提供者、ArchiveCryptoStream
+│     ├─ Formats/
+│     │  ├─ Zip/                 自研 ZIP 读写（含 Zip64、加密挂接）
+│     │  ├─ Tar/                 TAR / TAR.GZ / TAR.BZ2
+│     │  └─ Codecs/              GZ/BZ2/XZ/Zstd/LZ4 单文件编解码格式
+│     ├─ Native/                 Rust 核心 P/Invoke 绑定（能力协商 + 降级）
+│     ├─ GeneralZip.cs           启动引导（含原生自动装配）+ 静态门面
+│     ├─ ArchiveReader.cs        读取封装（事件源）
+│     ├─ ArchiveWriter.cs        写入封装（事件源）
+│     └─ ArchiveFormatRegistry.cs 格式注册表 + 魔数探测
 ├─ tests/
 │  ├─ GeneralZip.Tests/          核心测试（含互操作 oracle）
 │  └─ GeneralZip.Native.Tests/   Rust 核心集成测试
@@ -306,8 +307,8 @@ NativeCoreLoader.TryLoad()
        NativeCoreMissingException("...如何安装/部署 native core...")
 ```
 
-`GeneralZip` 核心包**不引用** `GeneralZip.Native`；宿主应用按需引用后者并调用
-`GeneralZipNativeInstaller.Register(registry)`（或在启动时一行 `GeneralZipNative.Initialize();`）。
+原生绑定与托管核心同包发布：`GeneralZip.Initialize()` 自动调用
+`GeneralZipNative.Initialize()`（幂等）完成能力注册；核心二进制缺失时仅降级、不抛异常。
 
 ## 8. 关键流程
 

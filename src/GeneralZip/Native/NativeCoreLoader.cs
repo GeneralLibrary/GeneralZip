@@ -6,8 +6,8 @@ namespace GeneralZip.Native;
 
 /// <summary>
 /// 原生核心加载器：按候选路径探测并预加载 cdylib。
-/// 加载成功后 P/Invoke 按模块名解析到已加载实例；加载失败时本包提供者不注册，
-/// 访问 7z/RAR 抛 <see cref="NativeCoreMissingException"/>（含部署指引）。
+/// 加载成功后 P/Invoke 按模块名解析到已加载实例；加载失败时提供者不注册，
+/// 访问 7z/RAR 抛 <see cref="global::GeneralZip.NativeCoreMissingException"/>（含部署指引）。
 /// </summary>
 public static class NativeCoreLoader
 {
@@ -75,7 +75,7 @@ public static class NativeCoreLoader
     {
         if (!TryLoad())
         {
-            throw new NativeCoreMissingException(
+            throw new global::GeneralZip.NativeCoreMissingException(
                 "The GeneralZip native core (generalzip_native) is not loaded; 7z/RAR capabilities are unavailable.\n" +
                 $"Probe details: {_failureReason}\n" +
                 "Deployment options (any one of):\n" +

@@ -7,8 +7,8 @@ namespace GeneralZip.Native;
 /// <summary>
 /// GeneralZip 原生能力入口：一行注册 7z/RAR 提供者与原生编解码桥接。
 /// <code>
-/// GeneralZip.Initialize();          // 核心引导（幂等）
-/// GeneralZipNative.Initialize();    // 原生引导（可选；7z/RAR/bz2/xz/zstd/lz4）
+/// GeneralZip.Initialize();          // 核心引导（幂等）；已并入原生引导调用
+/// GeneralZipNative.Initialize();    // 原生引导（幂等，可显式调用；7z/RAR/bz2/xz/zstd/lz4）
 /// </code>
 /// 原生核心缺失时安全降级：7z/RAR 不注册、原生编解码格式报明确异常；纯托管能力不受影响。
 /// </summary>
@@ -48,7 +48,7 @@ public static class GeneralZipNative
                 registry.Register(new RarNativeFormat());
             }
 
-            // 单文件编解码桥接（bzip2 / xz / zstd / lz4）：核心包经 NativeBridge 间接调用
+            // 单文件编解码桥接（bzip2 / xz / zstd / lz4）：核心经 NativeBridge 间接调用
             var caps = NativeCoreLoader.Capabilities;
             NativeBridge.IsAvailable = () => NativeCoreLoader.IsAvailable;
             NativeBridge.Compress = (codec, src, dst) =>

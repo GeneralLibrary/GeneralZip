@@ -15,7 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GeneralZip\GeneralZip.csproj" />
-    <ProjectReference Include="..\..\src\GeneralZip.Native\GeneralZip.Native.csproj" />
   </ItemGroup>
 
   <!-- 本地构建时把 cargo 产物拷到测试输出（缺失则跳过，测试将报告核心缺失并跳过断言） -->
