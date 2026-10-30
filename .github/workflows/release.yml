@@ -213,12 +213,28 @@ jobs:
           name: nuget-packages
           path: artifacts/nuget
 
+      - name: Expose NuGet API key presence
+        run: echo "HAS_NUGET_KEY=$([ -n "$NUGET_API_KEY" ] && echo true || echo false)" >> "$GITHUB_ENV"
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
       - name: Publish to NuGet.org
+        if: env.HAS_NUGET_KEY == 'true'
         run: |
           dotnet nuget push "artifacts/nuget/*.nupkg" \
-            --api-key "${{ secrets.NUGET_API_KEY }}" \
+            --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+      - name: Notice (NuGet publish skipped)
+        if: env.HAS_NUGET_KEY != 'true'
+        run: |
+          echo "::warning::NUGET_API_KEY secret is not configured; skipped publishing to NuGet.org." \
+            && echo "Add the secret and re-run this workflow to publish. The GitHub Release is still created below."
+          echo "### NuGet publish skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "NUGET_API_KEY secret is not configured. Add it and re-run to publish to NuGet.org." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
