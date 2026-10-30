@@ -151,10 +151,11 @@ jobs:
         shell: pwsh
         run: |
           $smoke = Join-Path $env:RUNNER_TEMP "smoke"
+          $nugetDir = (Resolve-Path (Join-Path $env:GITHUB_WORKSPACE "artifacts/nuget")).Path
           dotnet new console -o $smoke --force
           Push-Location $smoke
-          dotnet add package GeneralZip --source "$(Resolve-Path ../artifacts/nuget)"
-          dotnet add package GeneralZip.Native --source "$(Resolve-Path ../artifacts/nuget)"
+          dotnet add package GeneralZip --source "$nugetDir"
+          dotnet add package GeneralZip.Native --source "$nugetDir"
           Set-Content -Path Program.cs -Value @'
           using GeneralZip;
           using GeneralZip.Native;
