@@ -148,6 +148,20 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 > 7z/RAR 与 BZ2/XZ/ZSTD/LZ4 由 **Rust 原生核心**提供（全部纯 Rust crate）。
 > 核心缺失时优雅降级：ZIP/TAR/TAR.GZ/GZ（纯托管）与全部 ZIP 系加密不受影响。
 
+**部分 "—" 的原因：**
+
+- **RAR 不可写** —— RAR 压缩算法为 RARLAB 专有，公开的 unrar 许可证明确禁止将其用于实现
+  压缩器，全球只有 WinRAR 能生成 RAR 文件（7-Zip、libarchive 等同样只读不写）。
+  读取（含密码解密）由原生核心完整支持。
+- **TAR / GZ / BZ2 / XZ / ZSTD / LZ4 的加密列** —— 这些格式的规范中根本不存在加密机制：
+  TAR 是纯"头 + 数据"容器，单文件编解码器也没有存放 KDF 参数、IV 或认证标签的位置。
+  需要加密时可在应用层"先加密后压缩"，或改用 ZIP + WinZip AES / SM4-GM。
+- **SM4-GM 仅落地于 ZIP 是刻意设计** —— ZIP 的 extra field 机制天生支持第三方扩展，
+  SM4-GM 容器的二进制规范已在 [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) 完整文档化，
+  供第三方实现互通；向 7z 这类标准化容器注入自定义加密会产出其他工具无法打开的归档。
+- **ZipCrypto 写入默认关闭**（遗留 56 位弱加密），需显式启用；
+  正式场景请选择 WinZip AES（通用互通）或 SM4-GM（国密合规）。
+
 ## 从源码构建
 
 ```powershell

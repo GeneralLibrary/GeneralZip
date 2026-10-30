@@ -146,6 +146,23 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 > When the core is missing, the library degrades gracefully: ZIP/TAR/TAR.GZ/GZ (pure managed)
 > and all ZIP-family encryption are unaffected.
 
+**Why some cells are "—":**
+
+- **RAR write** — the RAR compression algorithm is proprietary; the published unrar license
+  explicitly forbids reimplementing the compressor, and WinRAR is the only tool that can
+  produce RAR archives (the same reason 7-Zip, libarchive, etc. are read-only). Reading,
+  including password-protected archives, is fully supported via the native core.
+- **Encryption columns for TAR / GZ / BZ2 / XZ / ZSTD / LZ4** — these format specifications
+  contain no encryption mechanism at all: TAR is a plain header + data container, and the
+  single-file codecs have nowhere to carry KDF parameters, IVs, or authentication tags.
+  Encrypt at the application layer (encrypt-then-compress), or use ZIP with WinZip AES / SM4-GM.
+- **SM4-GM is ZIP-only by design** — ZIP's extra-field mechanism is officially extensible,
+  so the SM4-GM container is fully documented in [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md)
+  for third-party interop. Injecting custom crypto into standardized containers such as 7z
+  would produce archives no other tool can open.
+- **ZipCrypto write is disabled by default** (legacy 56-bit cipher); it must be opted into
+  explicitly. Prefer WinZip AES (universal) or SM4-GM (national cryptography compliance).
+
 ## Building from Source
 
 ```powershell
