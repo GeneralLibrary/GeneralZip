@@ -154,7 +154,8 @@ jobs:
           $nugetDir = (Resolve-Path (Join-Path $env:GITHUB_WORKSPACE "artifacts/nuget")).Path
           dotnet new console -o $smoke --force
           Push-Location $smoke
-          dotnet add package GeneralZip --source "$nugetDir"
+          # Pin the version: without it, dotnet add package rejects prerelease builds (e.g. 0.0.1-beta)
+          dotnet add package GeneralZip --version $env:PACKAGE_VERSION --source "$nugetDir"
           Set-Content -Path Program.cs -Value @'
           using GeneralZip;
           using static GeneralZip.GeneralZip;
