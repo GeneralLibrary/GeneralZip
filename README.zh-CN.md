@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/banner.png" alt="GeneralZip">
+
 # GeneralZip
 
 **跨格式、可加密（含国密）、事件驱动的 .NET 压缩组件**

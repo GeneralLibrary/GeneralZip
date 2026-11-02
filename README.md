@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/banner.png" alt="GeneralZip">
+
 # GeneralZip
 
 **A cross-format, encryption-capable (SM4/Guomi included), event-driven compression library for .NET**
