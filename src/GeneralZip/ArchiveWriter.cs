@@ -61,7 +61,10 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         var dir = Path.GetDirectoryName(Path.GetFullPath(archivePath));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-        var stream = new FileStream(archivePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: false);
+        var volumeSize = options.VolumeSize;
+        Stream stream = volumeSize > 0
+            ? new global::GeneralZip.Internal.VolumeSplitStream(archivePath, volumeSize)
+            : new FileStream(archivePath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: false);
         try
         {
             var writer = OpenOnStreamCore(stream, format, options);
@@ -125,14 +128,26 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
     public void AddFile(string filePath, string? entryName = null)
     {
         using var content = OpenSourceFile(filePath, entryName, out var name, out var size, out var mtime);
-        AddEntryCore(name, content, size, mtime, CancellationToken.None);
+        var meta = new ArchiveEntryMetadata
+        {
+            Size = size,
+            LastWriteTime = mtime,
+            UnixMode = ProbeUnixMode(filePath),
+        };
+        AddEntryCore(name, content, size, mtime, CancellationToken.None, meta);
     }
 
     /// <summary>异步添加文件。</summary>
     public async Task AddFileAsync(string filePath, string? entryName = null, CancellationToken cancellationToken = default)
     {
         using var content = OpenSourceFile(filePath, entryName, out var name, out var size, out var mtime);
-        await AddEntryCoreAsync(name, content, size, mtime, cancellationToken).ConfigureAwait(false);
+        var meta = new ArchiveEntryMetadata
+        {
+            Size = size,
+            LastWriteTime = mtime,
+            UnixMode = ProbeUnixMode(filePath),
+        };
+        await AddEntryCoreAsync(name, content, size, mtime, cancellationToken, meta).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -154,6 +169,55 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         if (entryName == null) throw new ArgumentNullException(nameof(entryName));
         if (content == null) throw new ArgumentNullException(nameof(content));
         AddEntryCore(entryName, content, size, lastWriteTime, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 添加流内容为条目（完整元数据版）：条目名/大小/时间戳/注释由 metadata 提供。
+    /// 用于重打包等需要忠实保留原条目元数据的场景。
+    /// </summary>
+    public void AddStream(string entryName, Stream content, ArchiveEntryMetadata metadata)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (content == null) throw new ArgumentNullException(nameof(content));
+        if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+
+        var meta = metadata.Clone();
+        meta.Size = meta.Size < 0 ? -1 : meta.Size;
+        AddEntryCore(entryName, content, meta.Size >= 0 ? meta.Size : null, meta.LastWriteTime, CancellationToken.None, meta);
+    }
+
+    /// <summary>
+    /// 写入一个目录占位条目（格式支持时；不支持目录概念的格式会忽略）。
+    /// </summary>
+    public void AddDirectoryEntry(string entryName, DateTimeOffset? lastWriteTime = null)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        _inner.AddDirectoryEntry(entryName, new ArchiveEntryMetadata
+        {
+            LastWriteTime = lastWriteTime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
+        });
+    }
+
+    /// <summary>
+    /// 写入符号链接条目。格式需支持符号链接（ZIP / TAR 实现；其它格式抛 NotSupportedException）。
+    /// </summary>
+    /// <param name="entryName">条目名。</param>
+    /// <param name="target">链接目标路径（原样写入归档，不做解析）。</param>
+    /// <param name="lastWriteTime">时间戳。</param>
+    public void AddSymlink(string entryName, string target, DateTimeOffset? lastWriteTime = null)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (target == null) throw new ArgumentNullException(nameof(target));
+
+        if (_inner is not IArchiveSymlinkWriter symlinkWriter)
+        {
+            throw new NotSupportedException($"Format {_inner.Info.Name} does not support symbolic link entries");
+        }
+
+        symlinkWriter.AddSymlink(entryName, target, new ArchiveEntryMetadata
+        {
+            LastWriteTime = lastWriteTime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
+        });
     }
 
     /// <summary>完成归档（写中央目录/索引）。Dispose 未 Finish 时会自动调用。</summary>
@@ -191,6 +255,32 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
     }
 
+    /// <summary>Unix 平台读取源文件的权限位（AddFile 时随条目写入）；Windows/失败返回 null。</summary>
+    private static uint? ProbeUnixMode(string filePath)
+    {
+#if NET8_0_OR_GREATER
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return null;
+        }
+
+        try
+        {
+            var mode = File.GetUnixFileMode(filePath);
+            var bits = (uint)mode & 0xFFFu;
+            // 文件类型位：目录/文件按源路径判断（AddFile 只走常规文件）
+            return 0x8000u | bits; // S_IFREG
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+#else
+        _ = filePath;
+        return null;
+#endif
+    }
+
     private async Task AddDirectoryCore(string directoryPath, string? entryPrefix, Predicate<string>? filter, bool async, CancellationToken ct)
     {
         if (directoryPath == null) throw new ArgumentNullException(nameof(directoryPath));
@@ -226,9 +316,9 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    private void AddEntryCore(string entryName, Stream content, long? size, DateTimeOffset? mtime, CancellationToken ct)
+    private void AddEntryCore(string entryName, Stream content, long? size, DateTimeOffset? mtime, CancellationToken ct, ArchiveEntryMetadata? metadata = null)
     {
-        var meta = new ArchiveEntryMetadata
+        var meta = metadata ?? new ArchiveEntryMetadata
         {
             Size = size ?? -1,
             LastWriteTime = mtime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
@@ -253,9 +343,9 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         }
     }
 
-    private async Task AddEntryCoreAsync(string entryName, Stream content, long? size, DateTimeOffset? mtime, CancellationToken ct)
+    private async Task AddEntryCoreAsync(string entryName, Stream content, long? size, DateTimeOffset? mtime, CancellationToken ct, ArchiveEntryMetadata? metadata = null)
     {
-        var meta = new ArchiveEntryMetadata
+        var meta = metadata ?? new ArchiveEntryMetadata
         {
             Size = size ?? -1,
             LastWriteTime = mtime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,

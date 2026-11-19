@@ -11,6 +11,7 @@
 mod caps;
 mod codecs;
 mod sevenz;
+mod stream;
 mod xz;
 
 #[cfg(feature = "rar")]

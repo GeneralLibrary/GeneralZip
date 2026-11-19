@@ -8,22 +8,22 @@ using GeneralZip.Abstractions;
 namespace GeneralZip.Formats.Codecs;
 
 /// <summary>
-/// 单文件编解码格式基类（GZ / BZ2 / XZ / Zstd / LZ4）。
+/// 单文件编解码格式基类（GZ / BZ2 / XZ / Zstd / LZ4 / BROTLI）。
 /// 语义：整包 = 一个条目（原始文件内容的压缩流）。
+/// 托管实现（GZIP）为真流式；原生实现经 Rust 核心的回调式转码：
+/// 压缩直通落盘（零临时文件），解压整段解码到单个临时文件后惰性读取。
 /// </summary>
 public abstract class SingleFileCodecFormat : IArchiveFormat
 {
     private readonly string _name;
     private readonly string[] _extensions;
-    private readonly string _strippedExtension;
     private readonly string? _description;
     private readonly FormatCapabilities _capabilities;
 
-    protected SingleFileCodecFormat(string name, string[] extensions, string strippedExtension, string? description, bool supportsWrite)
+    protected SingleFileCodecFormat(string name, string[] extensions, string? description, bool supportsWrite)
     {
         _name = name;
         _extensions = extensions;
-        _strippedExtension = strippedExtension;
         _description = description;
         _capabilities = FormatCapabilities.Read | FormatCapabilities.SeekableRead
                         | (supportsWrite ? FormatCapabilities.Write : FormatCapabilities.None);
@@ -31,17 +31,20 @@ public abstract class SingleFileCodecFormat : IArchiveFormat
 
     public ArchiveFormatInfo Info => new(_name, _extensions, _capabilities, _description);
 
-    /// <summary>解压包装。</summary>
+    /// <summary>解压包装（托管路径；原生格式走 <see cref="NativeCodecId"/> 路径）。</summary>
     protected abstract Stream OpenDecompress(Stream source);
 
-    /// <summary>压缩包装。</summary>
-    protected abstract Stream OpenCompress(Stream destination);
+    /// <summary>压缩包装（托管路径；CodecWriter 对原生格式不走此处）。</summary>
+    internal abstract Stream OpenCompress(Stream destination);
 
     /// <summary>签名检查（前部字节）。</summary>
     protected abstract bool MatchesPrefix(byte[] prefix, int length);
 
-    /// <summary>压缩输出是否支持流式未知大小（默认 false）。</summary>
-    internal virtual bool RequiresKnownSizeForWrite => false;
+    /// <summary>原生编解码器标识（Rust 核心中的 codec id）；null = 托管实现（GZIP）。</summary>
+    internal abstract string? NativeCodecId { get; }
+
+    /// <summary>是否为原生转码格式（写入直通、读取经临时解码）。</summary>
+    internal bool IsNativeTranscoder => NativeCodecId != null;
 
     public bool MatchesSignature(Stream stream)
     {
@@ -85,7 +88,7 @@ public abstract class SingleFileCodecFormat : IArchiveFormat
 
     public IArchiveWriter OpenWrite(Stream stream, ArchiveWriteOptions options)
     {
-        return new CodecWriter(OpenCompress(stream), Info, this);
+        return new CodecWriter(stream, Info, this);
     }
 
     /// <summary>从源文件名推导条目名（剥掉压缩扩展名）。</summary>
@@ -109,9 +112,7 @@ public abstract class SingleFileCodecFormat : IArchiveFormat
     {
         if ((_capabilities & FormatCapabilities.Write) == 0)
         {
-            throw new NotSupportedException(
-                $"Format {_name} does not support writing in its current configuration" +
-                (RequiresKnownSizeForWrite ? " (requires the native codec core)" : string.Empty));
+            throw new NotSupportedException($"Format {_name} does not support writing in its current configuration");
         }
     }
 }
@@ -185,20 +186,25 @@ internal sealed class CodecEntry : IArchiveEntry
     public string? Comment => null;
 }
 
-/// <summary>单文件编解码写入器（仅接受一个条目；写入即压缩落盘）。</summary>
+/// <summary>
+/// 单文件编解码写入器（仅接受一个条目）。
+/// 原生转码格式：条目内容经 Rust 核心流式压缩直通落盘；托管格式（GZIP）经压缩流包装。
+/// </summary>
 internal sealed class CodecWriter : IArchiveWriter
 {
-    private readonly Stream _compressed;
+    private readonly Stream _destination;      // 最终输出流（不属于本对象）
+    private readonly Stream? _compressWrap;    // 托管（GZIP）路径的压缩包装
     private readonly SingleFileCodecFormat _owner;
     private readonly ArchiveWriteOptions _options;
     private bool _finished;
 
-    public CodecWriter(Stream compressed, ArchiveFormatInfo info, SingleFileCodecFormat owner)
+    public CodecWriter(Stream destination, ArchiveFormatInfo info, SingleFileCodecFormat owner)
     {
-        _compressed = compressed;
+        _destination = destination;
         Info = info;
         _owner = owner;
         _options = new ArchiveWriteOptions();
+        _compressWrap = owner.IsNativeTranscoder ? null : owner.OpenCompress(destination);
     }
 
     public ArchiveFormatInfo Info { get; }
@@ -214,9 +220,11 @@ internal sealed class CodecWriter : IArchiveWriter
     {
         _owner.EnsureWritable();
 
-        if (_owner.RequiresKnownSizeForWrite && metadata.Size < 0 && !content.CanSeek)
+        if (_owner.IsNativeTranscoder)
         {
-            throw new NotSupportedException($"Format {_owner.Info.Name} requires a known entry size for writing");
+            // 直通流式压缩：明文经回调拉入 Rust 核心，压缩字节直接落盘
+            NativeCodecRouter.CompressStream(content, _destination, _owner.NativeCodecId!, level: 6, cancellationToken);
+            return;
         }
 
         var buffer = new byte[81920];
@@ -224,7 +232,7 @@ internal sealed class CodecWriter : IArchiveWriter
         while ((read = content.Read(buffer, 0, buffer.Length)) > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _compressed.Write(buffer, 0, read);
+            _compressWrap!.Write(buffer, 0, read);
         }
     }
 
@@ -232,7 +240,8 @@ internal sealed class CodecWriter : IArchiveWriter
     {
         if (_finished) return;
         _finished = true;
-        _compressed.Flush();
+        _compressWrap?.Flush();
+        _destination.Flush();
     }
 
     public Task FinishAsync(CancellationToken cancellationToken)
@@ -249,7 +258,12 @@ internal sealed class CodecWriter : IArchiveWriter
 
     public void Dispose()
     {
-        // Dispose 压缩流以刷出流终结块（gzip/xz/zstd/lz4 尾部）
-        _compressed.Dispose();
+        // 先收尾（Flush 输出），再 Dispose 压缩包装（gzip 在 Dispose 时写终结块；底层流不关闭）
+        if (!_finished)
+        {
+            try { Finish(CancellationToken.None); } catch { /* 自动收尾失败不遮蔽主异常 */ }
+        }
+
+        _compressWrap?.Dispose();
     }
 }

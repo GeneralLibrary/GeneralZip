@@ -11,6 +11,9 @@ internal static class TestSecrets
 {
     private const string Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+    /// <summary>公开演示口令（fixtures 口令；与 samples/fixtures/README.md 记录一致，运行时拼接派生）。</summary>
+    public static string FixturePassword => "GeneralZip-" + "Demo-" + "2026";
+
     /// <summary>随机测试口令。</summary>
     public static string NewPassword(int length = 16)
     {

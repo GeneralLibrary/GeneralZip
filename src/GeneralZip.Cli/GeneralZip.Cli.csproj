@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>GeneralZip.Cli</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <!-- dotnet global/local tool：gz 命令 -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>gz</ToolCommandName>
+    <PackageOutputPath>../../artifacts</PackageOutputPath>
+    <Description>GeneralZip command line: cross-format compression (ZIP/7z/RAR/TAR/GZ/BZ2/XZ/Zstd/LZ4/Brotli/CPIO/ISO/CAB) with WinZip AES and Chinese national crypto (SM4-GM / SM2 envelope). dotnet tool install GeneralZip.Cli</Description>
+    <PackageTags>zip;7z;rar;compression;archive;cli;tool;sm4;sm2;guomi;encryption;tar;gzip;zstd;lz4;bzip2;xz;brotli;cpio;iso;cab</PackageTags>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GeneralZip\GeneralZip.csproj" SetTargetFramework="TargetFramework=net8.0" />
+  </ItemGroup>
+
+</Project>

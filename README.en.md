@@ -19,10 +19,10 @@
 
 ## Why GeneralZip?
 
-- **One API, many formats** — ZIP, 7z, RAR, TAR, GZ, BZ2, XZ, Zstd, LZ4 with automatic magic-byte detection. No more "which library do I need for this file?"
-- **Encryption done right** — WinZip AES for universal interop, plus **SM4-GM** (Chinese national cryptography) as a documented custom ZIP extension, all behind one `EncryptionAlgorithm` switch.
-- **Built for apps, not just scripts** — full event system (progress, interactive password prompts, overwrite decisions, error policies), `CancellationToken` everywhere, `IProgress<T>` support.
-- **Zero third-party NuGet dependencies in the core** — cryptographic primitives (SM3/SM4) and the TAR container are pure C# implementations validated against GB/T standard test vectors; native codecs (7z/bzip2/xz/zstd/lz4) live in an optional Rust native core, all pure Rust.
+- **One API, many formats** — ZIP, 7z, RAR, TAR, GZ, BZ2, XZ, Zstd, LZ4, Brotli, CPIO, ISO9660 (read) and CAB (read) with automatic magic-byte detection. No more "which library do I need for this file?"
+- **Encryption done right** — WinZip AES for universal interop, **SM4-GM** (Chinese national cryptography) as a documented custom ZIP extension, and an **SM2-GM envelope** (per-entry data keys sealed with SM2 public-key encryption — public-key recipients, no shared passwords). All behind one `EncryptionAlgorithm` switch, with a pluggable KDF registry.
+- **Built for apps, not just scripts** — full event system (progress, interactive password prompts, overwrite decisions, error policies), `CancellationToken` everywhere, `IProgress<T>` support, parallel compress/extract, `IAsyncEnumerable` entry enumeration.
+- **Zero third-party NuGet dependencies in the core** — cryptographic primitives (SM3/SM4/SM2) and the TAR/CPIO containers are pure C# implementations validated against GB/T standard test vectors; native codecs (7z/bzip2/xz/zstd/lz4/brotli) live in an optional Rust native core, all pure Rust, streamed with zero temp files.
 
 ## Installation
 
@@ -114,10 +114,46 @@ var result = reader.ExtractToDirectory(@"D:\out", new ExtractionOptions
 });
 ```
 
+### High-level operations
+
+```csharp
+// Append to an existing archive (read→rewrite; encrypted archives keep their algorithm)
+await GeneralZip.AppendAsync("backup.zip", @"C:\new-files");
+
+// Remove entries by exact name
+await GeneralZip.RemoveAsync("backup.zip", new[] { "junk.txt" });
+
+// Cross-format conversion (target format from extension)
+await GeneralZip.ConvertAsync("old.zip", "new.7z");
+
+// Stream → archive stream and back (no disk involved)
+await GeneralZip.CompressAsync(sourceStream, output, "ZIP", "data.bin");
+
+// Parallel extraction & compression (entry-level sharding)
+GeneralZip.Extract("huge.zip", "out", extraction: new ExtractionOptions { MaxDegreeOfParallelism = 4 });
+
+// Glob include/exclude filters
+GeneralZip.Extract("logs.zip", "out", extraction: new ExtractionOptions
+{
+    IncludePatterns = new[] { "**/*.log" },
+    ExcludePatterns = new[] { "**/*.tmp" },
+});
+
+// Symbolic links & Unix permissions (ZIP/TAR)
+writer.AddSymlink("latest.log", "logs/2026.log");
+GeneralZip.Extract("pkg.tar", "out", extraction: new ExtractionOptions
+{
+    SymlinkPolicy = SymlinkPolicy.Preserve,
+    PreserveUnixAttributes = true,
+});
+```
+
 ### Integrity testing
 
 ```csharp
-var test = GeneralZipReader.Open(path).TestAll();
+// Works without a password for plain archives; supply one for encrypted archives
+using var testReader = GeneralZipReader.Open(path, o => o.Password = password);
+var test = testReader.TestAll();
 Console.WriteLine(test.Success ? "OK" : $"{test.FailedCount} entries failed");
 ```
 
@@ -136,16 +172,20 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 
 | Format | Read | Write | Encrypted Read | Encrypted Write |
 |---|:---:|:---:|:---:|:---:|
-| ZIP (Store/Deflate/Zip64) | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** | ✓ |
+| ZIP (Store/Deflate/**BZip2/Zstd/LZMA**/Zip64) | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** / **SM2-GM** | ✓ |
 | 7z (LZMA2) | ✓ | ✓ | AES-256 | AES-256 |
 | RAR4/RAR5 | ✓ | — (proprietary) | ✓ password | — |
-| TAR / TAR.GZ | ✓ | ✓ | — | — |
+| TAR / TAR.GZ / TAR.BZ2 | ✓ | ✓ | — | — |
 | GZ | ✓ (.NET built-in) | ✓ (.NET built-in) | — | — |
-| BZ2 / XZ / ZSTD / LZ4 | ✓ (native core) | ✓ (native core) | — | — |
+| BZ2 / XZ / ZSTD / LZ4 / BROTLI | ✓ (native core) | ✓ (native core) | — | — |
+| CPIO (newc/odc/binary) | ✓ | ✓ (newc) | — | — |
+| ISO9660 (+Joliet/Rock Ridge) | ✓ | — (read-only) | — | — |
+| CAB | ✓ (NONE/stored) | — (read-only) | — | — |
 
-> 7z/RAR and BZ2/XZ/ZSTD/LZ4 are provided by the **Rust native core** (all pure-Rust crates).
-> When the core is missing, the library degrades gracefully: ZIP/TAR/TAR.GZ/GZ (pure managed)
-> and all ZIP-family encryption are unaffected.
+> 7z/RAR and BZ2/XZ/ZSTD/LZ4/BROTLI are provided by the **Rust native core** (all pure-Rust crates),
+> streamed through a callback FFI with no temp files. When the core is missing, the library degrades
+> gracefully: ZIP/TAR/CPIO/GZ (pure managed) and all ZIP-family encryption are unaffected.
+> ZIP entries can use BZip2/Zstd/LZMA compression methods (interop with 7-Zip/Info-ZIP archives).
 
 **Why some cells are "—":**
 
@@ -208,28 +248,38 @@ Throughput numbers for all formats (including per-algorithm encryption overhead)
 | [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) | Binary spec of the SM4-GM encrypted ZIP container for third-party interop (Chinese) |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Full-format performance data (Chinese) |
 | [samples/](samples/) | Runnable samples: basic usage, events, benchmarks, fixture generator |
+| [fuzz/](fuzz/) | Read-path fuzzing harness (SharpFuzz) + CI robustness regression |
 
 ## Project Layout
 
 ```
 src/GeneralZip/           Library (managed core + bundled Rust native core bindings)
-native/generalzip-native/ Rust cdylib: 7z/bzip2/xz/zstd/lz4 codecs (C ABI)
+src/GeneralZip.Cli/       gz command line (dotnet tool: `dotnet tool install GeneralZip.Cli`)
+native/generalzip-native/ Rust cdylib: 7z/bzip2/xz/zstd/lz4/brotli codecs (C ABI, streaming)
 native/dlltool-shim-rs/   Build helper for windows-gnu raw-dylib imports
-tests/                    73 tests: standard vectors, interop oracle, events, fixtures
-samples/                  Samples + sample archives (fixtures)
+tests/                    158 tests: standard vectors, interop oracle, events, fixtures, robustness
+samples/                  Samples + sample archives (fixtures + third-party interop anchors)
+fuzz/                     Read-path fuzzing harness (SharpFuzz)
 build/                    One-shot build script
 ```
 
 ## Known Limitations
 
 - RAR is **read-only** — the compression algorithm is proprietary; no compliant implementation can create RAR archives.
-- 7z archives cannot be appended to (each write produces a whole new archive).
-- SM4-GM is a custom specification (ZIP has no official SM4 standard); interop is limited to this library and third parties implementing the same spec.
-- BZ2/XZ/ZSTD/LZ4 require the native core; GZip is always available (pure managed).
-- Native zstd compression is a one-shot in-memory API; xz/lz4/bzip2 stream.
+- 7z archives cannot be appended in place; Append/Convert use read→rewrite semantics (producing a whole new archive).
+- SM4-GM / SM2-GM are custom specifications (ZIP has no official SM standards); interop is limited to this library and third parties implementing the same specs (see `docs/CRYPTO-SPEC.md`).
+- BZ2/XZ/ZSTD/LZ4/BROTLI require the native core; GZip is always available (pure managed).
+- ISO9660 and CAB are read-only. CAB supports NONE (stored) folders only — MSZIP/LZX/Quantum require a proprietary 32K-window decoder.
+- Append/Remove/Convert rewrite the archive: original entry encryption parameters (salt/IV) are regenerated, but the algorithm is preserved automatically.
 
 ## Contributing & License
 
 Issues and PRs are welcome. Please run `build\build.ps1` and make sure all tests pass before submitting.
 
 Released under the [MIT License](LICENSE).
+
+<div align="right">
+
+[**English**](README.md) | [中文](README.zh-CN.md)
+
+</div>

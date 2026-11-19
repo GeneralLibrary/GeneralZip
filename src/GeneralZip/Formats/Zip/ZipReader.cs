@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using GeneralZip;
 using GeneralZip.Abstractions;
+using GeneralZip.Formats.Codecs;
 using GeneralZip.Internal;
 
 namespace GeneralZip.Formats.Zip;
@@ -155,6 +156,9 @@ internal sealed class ZipReader : IArchiveReader
         {
             ZipConstants.MethodStore => source,
             ZipConstants.MethodDeflate => new DeflateStream(source, CompressionMode.Decompress, leaveOpen: true),
+            ZipConstants.MethodBZip2 => new NativeTempDecodeStream(source, "bzip2"),
+            ZipConstants.MethodZstd => new NativeTempDecodeStream(source, "zstd"),
+            ZipConstants.MethodLzma => new NativeTempDecodeStream(source, "lzma-zip"),
             _ => throw new UnsupportedFormatException($"Unsupported ZIP compression method: {effectiveMethod}", view.FullName),
         };
 
@@ -287,7 +291,7 @@ internal sealed class ZipReader : IArchiveReader
 
     private static ushort ExtractRealMethod(ZipCentralEntry central)
     {
-        // 真实压缩方法藏在加密 extra field 尾部（0x9901 偏移 5，0x4D53 末 2 字节）
+        // 真实压缩方法藏在加密 extra field 尾部（0x9901 偏移 5，0x4D53/0x4D54 末 2 字节）
         var pos = 0;
         while (pos + 4 <= central.Extra.Length)
         {
@@ -299,7 +303,7 @@ internal sealed class ZipReader : IArchiveReader
                 return Le.U16(central.Extra, dataStart + 5);
             }
 
-            if (id == 0x4D53 && size >= 2)
+            if ((id == 0x4D53 || id == 0x4D54) && size >= 2)
             {
                 return Le.U16(central.Extra, dataStart + size - 2);
             }

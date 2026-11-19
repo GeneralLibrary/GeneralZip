@@ -49,6 +49,22 @@ jobs:
             toolchain: stable
             target: x86_64-unknown-linux-musl
             use-dlltool-shim: false
+          - rid: linux-arm64
+            os: ubuntu-latest
+            toolchain: stable
+            target: aarch64-unknown-linux-gnu
+            use-dlltool-shim: false
+            cross: gcc-aarch64-linux-gnu
+          - rid: win-arm64
+            os: windows-latest
+            toolchain: stable-aarch64-pc-windows-gnu
+            target: aarch64-pc-windows-gnu
+            use-dlltool-shim: true
+          - rid: win-x86
+            os: windows-latest
+            toolchain: stable-i686-pc-windows-gnu
+            target: i686-pc-windows-gnu
+            use-dlltool-shim: true
           - rid: osx-x64
             os: macos-latest
             toolchain: stable
@@ -62,6 +78,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install cross toolchain
+        if: matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.cross }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

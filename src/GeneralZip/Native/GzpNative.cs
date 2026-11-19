@@ -91,6 +91,22 @@ internal static class GzpNative
     [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]
     public static extern int gzp_codec_decompress(string codec, string src, string dst);
 
+    // ---------- 流式编解码（回调推拉，零临时文件） ----------
+
+    /// <summary>读取回调：填充 buffer（≤capacity），返回字节数；0 = EOF；负数 = 失败。</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    public delegate int GzpCodecReadCallback(IntPtr buffer, uint capacity, IntPtr userData);
+
+    /// <summary>写入回调：消费 buffer（length 字节），0 = 成功；负数 = 失败。</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    public delegate int GzpCodecWriteCallback(IntPtr buffer, uint length, IntPtr userData);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]
+    public static extern int gzp_codec_crun(string codec, uint level, GzpCodecReadCallback readCb, GzpCodecWriteCallback writeCb, IntPtr userData);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]
+    public static extern int gzp_codec_drun(string codec, GzpCodecReadCallback readCb, GzpCodecWriteCallback writeCb, IntPtr userData);
+
     // ---------- xz ----------
 
     [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]

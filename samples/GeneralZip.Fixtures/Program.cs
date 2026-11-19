@@ -25,7 +25,7 @@ Console.WriteLine($"native: {(nativeOk ? "available" : "missing (BZ2/XZ/ZSTD/LZ4
 Console.WriteLine("Plaintext SHA-256:");
 foreach (var (name, data) in Entries())
 {
-    Console.WriteLine($"  {name,-20} {Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant()}  ({data.Length}B)");
+    Console.WriteLine($"  {name,-20} {System.Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant()}  ({data.Length}B)");
 }
 
 Console.WriteLine();
@@ -250,8 +250,8 @@ static void Verify(string fileName, string password)
         using var stream = reader.OpenEntryStream(entry);
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
-        var sha = Convert.ToHexString(SHA256.HashData(ms.ToArray())).ToLowerInvariant();
-        var expected = Convert.ToHexString(SHA256.HashData(expectedData)).ToLowerInvariant();
+        var sha = System.Convert.ToHexString(SHA256.HashData(ms.ToArray())).ToLowerInvariant();
+        var expected = System.Convert.ToHexString(SHA256.HashData(expectedData)).ToLowerInvariant();
         if (sha != expected)
         {
             throw new InvalidOperationException($"{fileName} content verification failed: {entry.FullName} (SHA-256 mismatch)");

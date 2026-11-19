@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Text;
 using GeneralZip.Abstractions;
 using GeneralZip.Cryptography;
+using GeneralZip.Formats.Codecs;
 using GeneralZip.Internal;
 
 namespace GeneralZip.Formats.Zip;
@@ -12,16 +13,22 @@ namespace GeneralZip.Formats.Zip;
 /// <summary>
 /// ZIP 写入器：顺序写入 + 数据描述符（支持不可寻址输出流）+ 加密挂接 + Zip64 中央目录。
 /// </summary>
-internal sealed class ZipWriter : IArchiveWriter
+internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
 {
     private readonly Stream _output;
     private readonly bool _ownsStream;
     private readonly ArchiveWriteOptions _options;
     private readonly IEncryptionProvider? _encryption;
+    private readonly GeneralZipEncryptionRegistry _encryptionRegistry;
+    private readonly byte[]? _recipientPublicKey;
     private readonly bool _utf8Names;
     private readonly List<CentralRecord> _centrals = new();
     private readonly CountingOutput _counter;
     private bool _finished;
+
+    // 并行分片压缩状态（MaxDegreeOfParallelism > 1 时启用）
+    private readonly List<StagedEntry>? _staged;
+    private readonly SemaphoreSlim? _stagingSemaphore;
 
     public ZipWriter(Stream output, ArchiveWriteOptions options, bool ownsStream, GeneralZipEncryptionRegistry? encryption = null)
     {
@@ -30,13 +37,14 @@ internal sealed class ZipWriter : IArchiveWriter
         _ownsStream = ownsStream;
         _counter = new CountingOutput(output);
         _utf8Names = IsUtf8(options.EntryNameEncoding);
+        _encryptionRegistry = encryption ?? GeneralZipEncryptionRegistry.Default;
 
         if (!output.CanWrite)
         {
             throw new ArgumentException("Output stream must be writable", nameof(output));
         }
 
-        var provider = options.ResolveProvider(encryption ?? GeneralZipEncryptionRegistry.Default);
+        var provider = options.ResolveProvider(_encryptionRegistry);
         if (provider != null && provider.AlgorithmId == "ZipCrypto" && !options.AllowWeakZipCrypto)
         {
             throw new NotSupportedException(
@@ -44,6 +52,13 @@ internal sealed class ZipWriter : IArchiveWriter
         }
 
         _encryption = provider;
+        _recipientPublicKey = ParseRecipientKey(options.RecipientPublicKey);
+
+        if (options.MaxDegreeOfParallelism > 1)
+        {
+            _staged = new List<StagedEntry>();
+            _stagingSemaphore = new SemaphoreSlim(options.MaxDegreeOfParallelism);
+        }
     }
 
     public ArchiveFormatInfo Info { get; } = new(
@@ -66,10 +81,36 @@ internal sealed class ZipWriter : IArchiveWriter
         ZipTime.ToDos(metadata.LastWriteTime ?? DateTimeOffset.Now, out var dosTime, out var dosDate);
 
         var offset = _counter.TotalBytes;
-        WriteLocalHeader(name, ZipConstants.MethodStore, dosTime, dosDate, encryptionExtra: null, encrypted: false);
-        WriteDescriptor(crc: 0, compSize: 0, uncompSize: 0);
+        WriteLocalHeader(_counter, name, ZipConstants.MethodStore, dosTime, dosDate, encryptionExtra: null, encrypted: false);
+        WriteDescriptor(_counter, crc: 0, compSize: 0, uncompSize: 0);
 
         _centrals.Add(new CentralRecord(name, ZipConstants.MethodStore, dosTime, dosDate, 0, 0, 0, offset, metadata, null, null, isDirectory: true, isEncrypted: false));
+    }
+
+    /// <summary>写入符号链接条目：目标路径文本作为条目内容（Store），Unix 模式 S_IFLNK|0777。</summary>
+    public void AddSymlink(string entryName, string target, ArchiveEntryMetadata metadata)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (target == null) throw new ArgumentNullException(nameof(target));
+
+        var name = NormalizeName(entryName);
+        ZipTime.ToDos(metadata.LastWriteTime ?? DateTimeOffset.Now, out var dosTime, out var dosDate);
+
+        var targetBytes = _options.EntryNameEncoding.GetBytes(target);
+        var crc = Crc32.Compute(targetBytes);
+        var offset = _counter.TotalBytes;
+        WriteLocalHeader(_counter, name, ZipConstants.MethodStore, dosTime, dosDate, null, encrypted: false);
+
+        _counter.Mark();
+        _counter.Write(targetBytes, 0, targetBytes.Length);
+        var compSize = _counter.BytesSinceMark;
+
+        WriteDescriptor(_counter, crc, compSize, targetBytes.Length);
+
+        var symlinkMeta = metadata.Clone();
+        symlinkMeta.UnixMode = 0xA1FF; // S_IFLNK | 0777
+        _centrals.Add(new CentralRecord(name, ZipConstants.MethodStore, dosTime, dosDate,
+            crc, compSize, targetBytes.Length, offset, symlinkMeta, null, null, isDirectory: false, isEncrypted: false));
     }
 
     public void AddEntry(string entryName, Stream content, ArchiveEntryMetadata metadata, CancellationToken cancellationToken)
@@ -77,10 +118,18 @@ internal sealed class ZipWriter : IArchiveWriter
         if (entryName == null) throw new ArgumentNullException(nameof(entryName));
         if (content == null) throw new ArgumentNullException(nameof(content));
 
+        if (_stagingSemaphore != null)
+        {
+            AddEntryStaged(entryName, content, metadata, cancellationToken);
+            return;
+        }
+
         var name = NormalizeName(entryName);
         var isEmpty = metadata.Size == 0 || (content.CanSeek && content.Length == 0);
         var isStore = _options.Level == CompressionLevelChoice.NoCompression || isEmpty;
-        var method = (ushort)(isStore ? ZipConstants.MethodStore : ZipConstants.MethodDeflate);
+        var method = isStore
+            ? ZipConstants.MethodStore
+            : MapMethod(_options.ZipCompressionMethod);
 
         ZipTime.ToDos(metadata.LastWriteTime ?? DateTimeOffset.Now, out var dosTime, out var dosDate);
 
@@ -89,11 +138,13 @@ internal sealed class ZipWriter : IArchiveWriter
         if (_encryption != null)
         {
             plan = _encryption.PrepareWrite(new EncryptionWriteContext(
-                _options.Password!, name, crc32: null, plainSize: metadata.Size, method, dosTime, _options.KdfIterations));
+                _options.Password, name, crc32: null, plainSize: metadata.Size, method, dosTime,
+                _options.KdfIterations, _options.ResolveKdf(_encryptionRegistry), _recipientPublicKey));
         }
 
         var offset = _counter.TotalBytes;
         WriteLocalHeader(
+            _counter,
             name,
             plan != null && plan.ExtraFieldId != null ? (ushort)ZipConstants.MethodEncryptedMarker : method,
             dosTime,
@@ -116,15 +167,7 @@ internal sealed class ZipWriter : IArchiveWriter
             }
             else
             {
-                var deflate = new DeflateStream(pipeline, MapLevel(_options.Level), leaveOpen: true);
-                try
-                {
-                    CopyPlain(crcStream, deflate, cancellationToken);
-                }
-                finally
-                {
-                    deflate.Dispose(); // 刷出 deflate 终结块
-                }
+                CompressInto(crcStream, pipeline, cancellationToken);
             }
         }
         finally
@@ -140,12 +183,200 @@ internal sealed class ZipWriter : IArchiveWriter
         var crc = crcStream.Crc;
         var uncompSize = crcStream.BytesPassed;
 
-        WriteDescriptor(crc, compressedBytes, uncompSize);
+        WriteDescriptor(_counter, crc, compressedBytes, uncompSize);
         _centrals.Add(new CentralRecord(
             name,
             plan != null && plan.ExtraFieldId != null ? (ushort)ZipConstants.MethodEncryptedMarker : method,
             dosTime, dosDate, crc, compressedBytes, uncompSize, offset, metadata,
             plan?.ExtraFieldData, plan?.ExtraFieldId, isDirectory: false, isEncrypted: plan != null));
+    }
+
+    // ---------- 并行分片压缩 ----------
+
+    /// <summary>
+    /// 分片并行：内容先顺序拷贝到明文临时文件（门面事件/进度仍按调用序触发），
+    /// 随后后台任务把明文压缩为完整分片（local header + 数据 + descriptor），
+    /// Finish 时按添加顺序装配并回填偏移。并发度由信号量限流。
+    /// </summary>
+    private void AddEntryStaged(string entryName, Stream content, ArchiveEntryMetadata metadata, CancellationToken ct)
+    {
+        var name = NormalizeName(entryName);
+        var isEmpty = metadata.Size == 0 || (content.CanSeek && content.Length == 0);
+        var isStore = _options.Level == CompressionLevelChoice.NoCompression || isEmpty;
+        var method = isStore ? ZipConstants.MethodStore : MapMethod(_options.ZipCompressionMethod);
+        ZipTime.ToDos(metadata.LastWriteTime ?? DateTimeOffset.Now, out var dosTime, out var dosDate);
+
+        EntryEncryptionPlan? plan = null;
+        if (_encryption != null)
+        {
+            plan = _encryption.PrepareWrite(new EncryptionWriteContext(
+                _options.Password, name, crc32: null, plainSize: metadata.Size, method, dosTime,
+                _options.KdfIterations, _options.ResolveKdf(_encryptionRegistry), _recipientPublicKey));
+        }
+
+        // 1) 顺序捕获明文（信号量限流：槽满时阻塞生产端）
+        _stagingSemaphore!.Wait(ct);
+        var plaintextPath = Path.Combine(Path.GetTempPath(), $"gzp-stage-{Guid.NewGuid():N}.in");
+        var fragmentPath = Path.Combine(Path.GetTempPath(), $"gzp-stage-{Guid.NewGuid():N}.frag");
+
+        var staged = new StagedEntry(name, method, dosTime, dosDate, metadata, plan, plaintextPath, fragmentPath);
+        _staged!.Add(staged);
+
+        try
+        {
+            using (var plain = new FileStream(plaintextPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: false))
+            {
+                CopyPlain(content, plain, ct);
+            }
+        }
+        catch
+        {
+            _stagingSemaphore.Release();
+            TryDelete(plaintextPath);
+            TryDelete(fragmentPath);
+            throw;
+        }
+
+        // 2) 后台压缩：明文临时文件 → 完整分片
+        staged.Task = Task.Run(() =>
+        {
+            try
+            {
+                CompressStagedFragment(staged, isStore, ct);
+            }
+            catch (Exception ex)
+            {
+                staged.Error = ex;
+            }
+            finally
+            {
+                _stagingSemaphore.Release();
+                TryDelete(plaintextPath);
+            }
+        }, CancellationToken.None);
+    }
+
+    private void CompressStagedFragment(StagedEntry staged, bool isStore, CancellationToken ct)
+    {
+        using var fragmentStream = new FileStream(staged.FragmentPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: false);
+        var fragment = new CountingOutput(fragmentStream);
+
+        var plan = staged.Plan;
+        WriteLocalHeader(
+            fragment,
+            staged.Name,
+            plan != null && plan.ExtraFieldId != null ? (ushort)ZipConstants.MethodEncryptedMarker : staged.Method,
+            staged.DosTime,
+            staged.DosDate,
+            plan?.ExtraFieldData,
+            plan != null,
+            plan?.ExtraFieldId);
+
+        using var plain = new FileStream(staged.PlaintextPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+        var crcStream = new Crc32Stream(plain, leaveOpen: true);
+
+        fragment.Mark();
+        Stream pipeline = plan != null ? plan.EncryptionStreamFactory(fragment) : fragment;
+        try
+        {
+            if (isStore)
+            {
+                CopyPlain(crcStream, pipeline, ct);
+            }
+            else
+            {
+                CompressInto(crcStream, pipeline, ct);
+            }
+        }
+        finally
+        {
+            if (!ReferenceEquals(pipeline, fragment))
+            {
+                pipeline.Dispose();
+            }
+        }
+
+        staged.Crc = crcStream.Crc;
+        staged.UncompressedSize = crcStream.BytesPassed;
+        staged.CompressedSize = fragment.BytesSinceMark;
+        WriteDescriptor(fragment, staged.Crc, staged.CompressedSize, staged.UncompressedSize);
+        fragmentStream.Flush();
+    }
+
+    private void AssembleStagedEntries(CancellationToken ct)
+    {
+        foreach (var staged in _staged!)
+        {
+            staged.Task!.Wait(ct);
+        }
+
+        // 任一分片失败则放弃装配（临时文件清理后原样抛出首个错误）
+        var firstError = _staged.FirstOrDefault(s => s.Error != null)?.Error;
+        if (firstError != null)
+        {
+            foreach (var staged in _staged)
+            {
+                TryDelete(staged.PlaintextPath);
+                TryDelete(staged.FragmentPath);
+            }
+
+            throw firstError;
+        }
+
+        foreach (var staged in _staged)
+        {
+            var offset = _counter.TotalBytes;
+            using (var fragment = File.OpenRead(staged.FragmentPath))
+            {
+                CopyPlain(fragment, _counter, ct);
+            }
+
+            TryDelete(staged.FragmentPath);
+
+            _centrals.Add(new CentralRecord(
+                staged.Name,
+                staged.Plan != null && staged.Plan.ExtraFieldId != null ? (ushort)ZipConstants.MethodEncryptedMarker : staged.Method,
+                staged.DosTime, staged.DosDate, staged.Crc, staged.CompressedSize, staged.UncompressedSize, offset,
+                staged.Metadata,
+                staged.Plan?.ExtraFieldData, staged.Plan?.ExtraFieldId, isDirectory: false, isEncrypted: staged.Plan != null));
+        }
+
+        _staged.Clear();
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch { /* 清理失败忽略 */ }
+    }
+
+    private sealed class StagedEntry
+    {
+        public StagedEntry(string name, ushort method, uint dosTime, uint dosDate,
+            ArchiveEntryMetadata metadata, EntryEncryptionPlan? plan, string plaintextPath, string fragmentPath)
+        {
+            Name = name;
+            Method = method;
+            DosTime = dosTime;
+            DosDate = dosDate;
+            Metadata = metadata;
+            Plan = plan;
+            PlaintextPath = plaintextPath;
+            FragmentPath = fragmentPath;
+        }
+
+        public string Name { get; }
+        public ushort Method { get; }
+        public uint DosTime { get; }
+        public uint DosDate { get; }
+        public ArchiveEntryMetadata Metadata { get; }
+        public EntryEncryptionPlan? Plan { get; }
+        public string PlaintextPath { get; }
+        public string FragmentPath { get; }
+        public Task Task { get; set; } = null!;
+        public uint Crc { get; set; }
+        public long CompressedSize { get; set; }
+        public long UncompressedSize { get; set; }
+        public Exception? Error { get; set; }
     }
 
     public void Finish(CancellationToken cancellationToken)
@@ -154,6 +385,11 @@ internal sealed class ZipWriter : IArchiveWriter
         _finished = true;
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_staged != null)
+        {
+            AssembleStagedEntries(cancellationToken);
+        }
 
         long cdOffset = _counter.TotalBytes;
         foreach (var central in _centrals)
@@ -223,7 +459,7 @@ internal sealed class ZipWriter : IArchiveWriter
 
     // ---------- 内部 ----------
 
-    private void WriteLocalHeader(string name, ushort method, uint dosTime, uint dosDate,
+    private void WriteLocalHeader(CountingOutput target, string name, ushort method, uint dosTime, uint dosDate,
         byte[]? encryptionExtra, bool encrypted, ushort? extraFieldId = null)
     {
         var nameBytes = EncodeName(name);
@@ -262,10 +498,10 @@ internal sealed class ZipWriter : IArchiveWriter
             Buffer.BlockCopy(extra, 0, header, 30 + nameBytes.Length, extra.Length);
         }
 
-        _counter.Write(header, 0, header.Length);
+        target.Write(header, 0, header.Length);
     }
 
-    private void WriteDescriptor(uint crc, long compSize, long uncompSize)
+    private void WriteDescriptor(CountingOutput target, uint crc, long compSize, long uncompSize)
     {
         var zip64Sizes = compSize > uint.MaxValue || uncompSize > uint.MaxValue;
         var descriptor = new byte[zip64Sizes ? 24 : 16];
@@ -282,7 +518,7 @@ internal sealed class ZipWriter : IArchiveWriter
             Le.Put32(descriptor, 12, (uint)uncompSize);
         }
 
-        _counter.Write(descriptor, 0, descriptor.Length);
+        target.Write(descriptor, 0, descriptor.Length);
     }
 
     private void WriteCentralHeader(CentralRecord central)
@@ -320,9 +556,12 @@ internal sealed class ZipWriter : IArchiveWriter
             extraLen += part.Length;
         }
 
-        // MS-DOS host（0x00）+ 规范版本（zip64 条目 45，否则 20）
-        var versionMadeBy = (ushort)(0x00 << 8 | (needsZip64 ? 45 : 20));
-        var externalAttrs = central.IsDirectory ? 0x10u : 0x20u;
+        // host：携带 Unix 模式时声明为 Unix（3）；否则 MS-DOS（0x00）。zip64 条目版本 45，否则 20
+        var host = central.UnixMode.HasValue ? 3u : 0u;
+        var versionMadeBy = (ushort)(host << 8 | (needsZip64 ? 45 : 20));
+        var externalAttrs = central.UnixMode.HasValue
+            ? central.UnixMode.Value << 16
+            : central.IsDirectory ? 0x10u : 0x20u;
 
         var header = new byte[46 + nameBytes.Length + extraLen + commentBytes.Length];
         Le.Put32(header, 0, ZipConstants.CentralHeaderSignature);
@@ -371,6 +610,52 @@ internal sealed class ZipWriter : IArchiveWriter
         }
     }
 
+    /// <summary>把明文流压缩进管道（方法由选项决定；Deflate 走托管，BZip2/Zstd/Lzma 走原生核心）。</summary>
+    private void CompressInto(Stream source, Stream destination, CancellationToken ct)
+    {
+        switch (_options.ZipCompressionMethod)
+        {
+            case ZipCompressionMethodChoice.BZip2:
+                NativeCodecRouter.CompressStream(source, destination, "bzip2", level: 0, ct);
+                break;
+            case ZipCompressionMethodChoice.Zstd:
+                NativeCodecRouter.CompressStream(source, destination, "zstd", MapZstdLevel(_options.Level), ct);
+                break;
+            case ZipCompressionMethodChoice.Lzma:
+                NativeCodecRouter.CompressStream(source, destination, "lzma-zip", level: 0, ct);
+                break;
+            default:
+            {
+                var deflate = new DeflateStream(destination, MapLevel(_options.Level), leaveOpen: true);
+                try
+                {
+                    CopyPlain(source, deflate, ct);
+                }
+                finally
+                {
+                    deflate.Dispose(); // 刷出 deflate 终结块
+                }
+
+                break;
+            }
+        }
+    }
+
+    private static ushort MapMethod(ZipCompressionMethodChoice choice) => choice switch
+    {
+        ZipCompressionMethodChoice.BZip2 => ZipConstants.MethodBZip2,
+        ZipCompressionMethodChoice.Zstd => ZipConstants.MethodZstd,
+        ZipCompressionMethodChoice.Lzma => ZipConstants.MethodLzma,
+        _ => ZipConstants.MethodDeflate,
+    };
+
+    private static int MapZstdLevel(CompressionLevelChoice level) => level switch
+    {
+        CompressionLevelChoice.Fastest => 3,
+        CompressionLevelChoice.SmallestSize => 19,
+        _ => 6,
+    };
+
     private static CompressionLevel MapLevel(CompressionLevelChoice level) => level switch
     {
         CompressionLevelChoice.Fastest => CompressionLevel.Fastest,
@@ -379,6 +664,25 @@ internal sealed class ZipWriter : IArchiveWriter
     };
 
     private static bool IsUtf8(Encoding encoding) => encoding is UTF8Encoding;
+
+    /// <summary>解析接收方公钥 hex（"04||X||Y" 130 字符或 "X||Y" 128 字符）。</summary>
+    private static byte[]? ParseRecipientKey(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return null;
+        }
+
+        var key = Cryptography.Sm2KeyPair.ParsePublicKeyHex(hex);
+        if (key == null)
+        {
+            throw new ArgumentException(
+                "RecipientPublicKey must be a hex-encoded SM2 public key: '04||X||Y' (130 chars) or 'X||Y' (128 chars)",
+                "RecipientPublicKey");
+        }
+
+        return key;
+    }
 
     private static string NormalizeName(string name)
     {
@@ -432,6 +736,7 @@ internal sealed class ZipWriter : IArchiveWriter
             EncryptionExtraFieldId = encryptionExtraFieldId;
             IsDirectory = isDirectory;
             IsEncrypted = isEncrypted;
+            UnixMode = metadata.UnixMode;
         }
 
         public string Name { get; }
@@ -447,5 +752,6 @@ internal sealed class ZipWriter : IArchiveWriter
         public ushort? EncryptionExtraFieldId { get; }
         public bool IsDirectory { get; }
         public bool IsEncrypted { get; }
+        public uint? UnixMode { get; }
     }
 }

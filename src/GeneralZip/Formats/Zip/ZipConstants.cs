@@ -18,6 +18,9 @@ internal static class ZipConstants
 
     public const ushort MethodStore = 0;
     public const ushort MethodDeflate = 8;
+    public const ushort MethodBZip2 = 12;
+    public const ushort MethodLzma = 14;
+    public const ushort MethodZstd = 93;
     public const ushort MethodEncryptedMarker = 99;
 
     public const ushort ExtraFieldZip64 = 0x0001;

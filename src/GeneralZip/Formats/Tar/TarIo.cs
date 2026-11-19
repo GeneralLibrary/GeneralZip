@@ -19,6 +19,9 @@ internal sealed class TarHeaderInfo
     public int Mode { get; set; } = 420; // 0644
 
     public byte TypeFlag { get; set; }
+
+    /// <summary>符号链接目标（typeflag '2'；硬链接/设备等其它类型为空）。</summary>
+    public string? LinkName { get; set; }
 }
 
 /// <summary>ustar 魔数辅助。</summary>
@@ -208,6 +211,7 @@ internal sealed class TarStreamReader : IDisposable
             Mode = (int)ParseOctal(header, 100, 8, 420), // 0644 默认
             Size = ParseOctal(header, 124, 12, 0),
             TypeFlag = header[156],
+            LinkName = ReadField(header, 157, 100),
         };
 
         var mtime = ParseOctal(header, 136, 12, 0);
@@ -222,9 +226,14 @@ internal sealed class TarStreamReader : IDisposable
         {
             info.IsDirectory = true;
         }
-        else if (typeFlag is (byte)'1' or (byte)'2' or (byte)'3' or (byte)'4' or (byte)'6')
+        else if (typeFlag == (byte)'2')
         {
-            throw new UnsupportedFormatException($"Unsupported TAR entry type '{(char)typeFlag}' (link/device file)");
+            // 符号链接：目标在 linkname 字段，数据段通常为空
+            info.IsDirectory = false;
+        }
+        else if (typeFlag is (byte)'1' or (byte)'3' or (byte)'4' or (byte)'6')
+        {
+            throw new UnsupportedFormatException($"Unsupported TAR entry type '{(char)typeFlag}' (hard link/device file)");
         }
 
         // 校验和：头 148 字节 + 8 空格 + 后 356 字节
@@ -345,15 +354,15 @@ internal sealed class TarStreamWriter : IDisposable
         _encoding = encoding ?? throw new ArgumentNullException(nameof(encoding));
     }
 
-    /// <summary>写入条目头。size 为随后写入的数据字节数（目录为 0）。</summary>
-    public void PutNextEntry(string name, long size, DateTimeOffset modTime, int mode, bool isDirectory)
+    /// <summary>写入条目头。size 为随后写入的数据字节数（目录/符号链接为 0）。</summary>
+    public void PutNextEntry(string name, long size, DateTimeOffset modTime, int mode, bool isDirectory, string? linkName = null)
     {
         if (_entryOpen)
         {
             throw new InvalidOperationException("Previous entry is still open (CloseEntry)");
         }
 
-        var header = BuildHeader(name, size, modTime, mode, isDirectory ? (byte)'5' : (byte)'0');
+        var header = BuildHeader(name, size, modTime, mode, linkName != null ? (byte)'2' : isDirectory ? (byte)'5' : (byte)'0', linkName);
         _stream.Write(header, 0, header.Length);
         _entrySize = size;
         _remaining = size;
@@ -402,7 +411,7 @@ internal sealed class TarStreamWriter : IDisposable
         _stream.Flush();
     }
 
-    internal byte[] BuildHeader(string name, long size, DateTimeOffset modTime, int mode, byte typeFlag)
+    internal byte[] BuildHeader(string name, long size, DateTimeOffset modTime, int mode, byte typeFlag, string? linkName = null)
     {
         var header = new byte[512];
         var finalName = name.Replace('\\', '/').TrimStart('/');
@@ -438,6 +447,11 @@ internal sealed class TarStreamWriter : IDisposable
         }
 
         header[156] = typeFlag;
+        if (linkName != null)
+        {
+            WriteField(header, 157, 100, linkName);
+        }
+
         WriteField(header, 257, 6, "ustar");
         WriteField(header, 263, 2, "00");
         WriteField(header, 265, 32, "GeneralZip");

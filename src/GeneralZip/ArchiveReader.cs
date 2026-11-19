@@ -15,10 +15,12 @@ namespace GeneralZip;
 public sealed class GeneralZipReader : IDisposable
 {
     private IArchiveReader _inner;
-    private FileStream? _ownedStream; // set when opened by path; closed on Dispose
+    private Stream? _ownedStream; // set when opened by path (or volume set); closed on Dispose
     private readonly ArchiveOpenOptions _options;
     private readonly PasswordGate _passwords;
     private EventHandler<PasswordRequiredEventArgs>? _passwordRequired;
+    private readonly object _eventLock = new();
+    private string? _sourcePath; // 并行解压时供工作实例按路径重开
 
     private GeneralZipReader(ArchiveOpenOptions options)
     {
@@ -51,6 +53,27 @@ public sealed class GeneralZipReader : IDisposable
         configure?.Invoke(options);
         options.SourceName = System.IO.Path.GetFileName(path);
 
+        // 分卷：x.zip.001 → 按序拼接 001/002/... 后按普通流探测
+        var volumes = global::GeneralZip.Internal.SplitVolumeLocator.Resolve(path);
+        if (volumes != null)
+        {
+            var volumeStream = new global::GeneralZip.Internal.MultiVolumeStream(volumes);
+            GeneralZipReader? volumeReader = null;
+            try
+            {
+                volumeReader = new GeneralZipReader(options);
+                AttachCore(volumeReader, volumeStream, options, initialize, registry, path, formatName: null);
+                volumeReader._ownedStream = volumeStream;
+                return volumeReader;
+            }
+            catch
+            {
+                volumeReader?.Dispose();
+                volumeStream.Dispose();
+                throw;
+            }
+        }
+
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
         GeneralZipReader? reader = null;
         try
@@ -60,6 +83,7 @@ public sealed class GeneralZipReader : IDisposable
             // Opening by path: the reader owns the FileStream. Format readers are created
             // with ownsStream:false, so the facade must close the stream on Dispose.
             reader._ownedStream = stream;
+            reader._sourcePath = path;
             return reader;
         }
         catch
@@ -244,9 +268,21 @@ public sealed class GeneralZipReader : IDisposable
         string destinationFilePath,
         ExtractionOptions? options = null,
         CancellationToken cancellationToken = default)
+        => ExtractEntryCore(entry, destinationFilePath, options, cancellationToken, testOnly: false);
+
+    /// <summary>完整性测试单个条目（不落盘）。并行 TestAll 的工作实例入口。</summary>
+    internal ArchiveResult TestEntry(IArchiveEntry entry, ExtractionOptions? options, CancellationToken cancellationToken)
+        => ExtractEntryCore(entry, string.Empty, options, cancellationToken, testOnly: true);
+
+    private ArchiveResult ExtractEntryCore(
+        IArchiveEntry entry,
+        string destinationFilePath,
+        ExtractionOptions? options,
+        CancellationToken cancellationToken,
+        bool testOnly)
     {
         if (entry == null) throw new ArgumentNullException(nameof(entry));
-        if (destinationFilePath == null) throw new ArgumentNullException(nameof(destinationFilePath));
+        if (!testOnly && destinationFilePath == null) throw new ArgumentNullException(nameof(destinationFilePath));
         EnsureAttached();
         options ??= new ExtractionOptions();
 
@@ -258,7 +294,7 @@ public sealed class GeneralZipReader : IDisposable
 
         var relay = new EntryProgressRelay(this, entry, progress);
         var dummy = 0;
-        var outcome = ExtractOne(entry, destinationFilePath, options, cancellationToken, relay, progress, result, new List<FailedEntry>(), testOnly: false, ref dummy);
+        var outcome = ExtractOne(entry, destinationFilePath, options, cancellationToken, relay, progress, result, new List<FailedEntry>(), testOnly, ref dummy);
         progress.Finalize(entry.Size >= 0 ? entry.Size : relay.BytesProcessed);
         if (outcome == Outcome.Abort) result.Aborted = true;
         return result;
@@ -284,6 +320,11 @@ public sealed class GeneralZipReader : IDisposable
         if (!testOnly)
         {
             Directory.CreateDirectory(destinationDirectory!);
+        }
+
+        if (options.MaxDegreeOfParallelism > 1 && _inner.Entries.Count > 1)
+        {
+            return ExtractCoreParallel(destinationDirectory, options, cancellationToken, testOnly, result, failures);
         }
 
         long totalBytes = 0;
@@ -313,7 +354,8 @@ public sealed class GeneralZipReader : IDisposable
                 continue;
             }
 
-            if (options.Filter != null && !options.Filter(entry))
+            if ((options.Filter != null && !options.Filter(entry))
+                || !GlobMatcher.Matches(entry.FullName, options.IncludePatterns, options.ExcludePatterns))
             {
                 result.SkippedCount++;
                 progress.CompleteEntry(Math.Max(0, entry.Size));
@@ -355,6 +397,181 @@ public sealed class GeneralZipReader : IDisposable
     }
 
     private enum Outcome { Done, Abort }
+
+    // ---------- 并行解压 ----------
+
+    private ArchiveResult ExtractCoreParallel(
+        string? destinationDirectory,
+        ExtractionOptions options,
+        CancellationToken cancellationToken,
+        bool testOnly,
+        ArchiveResult result,
+        List<FailedEntry> failures)
+    {
+        if (_sourcePath == null)
+        {
+            throw new NotSupportedException(
+                "Parallel extraction requires the archive to be opened by path (GeneralZipReader.Open(path, ...)). " +
+                "Stream-based readers share one underlying stream and cannot be reopened per worker.");
+        }
+
+        // 目录条目顺序创建（避免并发建目录竞态）；文件条目按索引分片并行
+        var fileEntries = new List<IArchiveEntry>();
+        foreach (var entry in _inner.Entries)
+        {
+            if (entry.IsDirectory)
+            {
+                if (!testOnly)
+                {
+                    var dir = EntryPathResolver.Resolve(destinationDirectory!, entry, flatten: options.Flatten);
+                    if (dir != null) Directory.CreateDirectory(dir);
+                }
+
+                continue;
+            }
+
+            if ((options.Filter != null && !options.Filter(entry))
+                || !GlobMatcher.Matches(entry.FullName, options.IncludePatterns, options.ExcludePatterns))
+            {
+                result.SkippedCount++;
+                continue;
+            }
+
+            fileEntries.Add(entry);
+        }
+
+        if (fileEntries.Count == 0)
+        {
+            result.Failures = failures;
+            return result;
+        }
+
+        var dop = Math.Min(options.MaxDegreeOfParallelism, fileEntries.Count);
+        var chunkSize = (fileEntries.Count + dop - 1) / dop;
+        var workerFailures = new List<FailedEntry>[dop];
+        var exceptions = new List<Exception>();
+
+        Parallel.For(0, dop, new ParallelOptions
+        {
+            MaxDegreeOfParallelism = dop,
+            CancellationToken = cancellationToken,
+        }, workerIndex =>
+        {
+            var lo = workerIndex * chunkSize;
+            var hi = Math.Min(fileEntries.Count, lo + chunkSize);
+            if (lo >= hi)
+            {
+                workerFailures[workerIndex] = new List<FailedEntry>();
+                return;
+            }
+
+            try
+            {
+                using var worker = OpenWorkerReader();
+                var localFailures = new List<FailedEntry>();
+                long processed = 0;
+                long skipped = 0;
+                for (var i = lo; i < hi; i++)
+                {
+                    var entry = fileEntries[i];
+                    if (testOnly)
+                    {
+                        var testResult = worker.TestEntry(entry, options, cancellationToken);
+                        processed += testResult.ProcessedCount;
+                        continue;
+                    }
+
+                    var targetPath = EntryPathResolver.Resolve(destinationDirectory!, entry, flatten: options.Flatten);
+                    if (targetPath == null)
+                    {
+                        var ex = new ArchiveException("Unsafe entry path (absolute path or path traversal); extraction denied", entry.FullName);
+                        RaiseEntryFailed(entry, ex);
+                        localFailures.Add(new FailedEntry(entry.FullName, ex));
+                        continue;
+                    }
+
+                    var workerResult = worker.ExtractEntry(entry, targetPath, options, cancellationToken);
+                    processed += workerResult.ProcessedCount;
+                    skipped += workerResult.SkippedCount;
+                }
+
+                workerFailures[workerIndex] = localFailures;
+                lock (result)
+                {
+                    result.ProcessedCount += processed;
+                    result.SkippedCount += skipped;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lock (exceptions)
+                {
+                    exceptions.Add(ex);
+                }
+            }
+        });
+
+        foreach (var list in workerFailures)
+        {
+            if (list != null)
+            {
+                failures.AddRange(list);
+            }
+        }
+
+        if (exceptions.Count > 0)
+        {
+            throw exceptions[0];
+        }
+
+        result.Failures = failures;
+        return result;
+    }
+
+    /// <summary>并行工作实例：按路径重开归档（预置口令随选项传入），事件转发至主实例（加锁串行化）。</summary>
+    private GeneralZipReader OpenWorkerReader()
+    {
+        var preset = _options.Password ?? Password;
+        var worker = GeneralZipReader.Open(_sourcePath!, preset != null ? o => o.Password = preset : null);
+
+        worker.EntryStarted += (_, args) => RaiseEntryStarted(args.Entry);
+        worker.EntryCompleted += (_, args) => RaiseEntryCompleted(args.Entry);
+        worker.EntryFailed += (_, args) => RaiseEntryFailed(args.Entry, args.Exception);
+        worker.EntryProgress += (_, args) =>
+        {
+            lock (_eventLock)
+            {
+                EntryProgress?.Invoke(this, args);
+            }
+        };
+        worker.OverallProgress += (_, progress) =>
+        {
+            lock (_eventLock)
+            {
+                OverallProgress?.Invoke(this, progress);
+            }
+        };
+        worker.OverwriteQuery += (_, args) =>
+        {
+            lock (_eventLock)
+            {
+                OverwriteQuery?.Invoke(this, args);
+            }
+        };
+        worker.ErrorReport += (_, args) =>
+        {
+            lock (_eventLock)
+            {
+                ErrorReport?.Invoke(this, args);
+            }
+        };
+
+        return worker;
+    }
 
     private Outcome ExtractOne(
         IArchiveEntry entry,
@@ -408,15 +625,27 @@ public sealed class GeneralZipReader : IDisposable
                     {
                         Drain(source, options.BufferSize, relay, cancellationToken);
                     }
+                    else if (TryCreateSymlink(source, entry, finalPath!, options))
+                    {
+                        // 符号链接条目：按策略创建链接（或降级为普通文件写入目标文本）
+                    }
                     else
                     {
                         CopyToFile(source, finalPath!, options.BufferSize, relay, cancellationToken);
                     }
                 }
 
-                if (!testOnly && options.PreserveTimestamps && entry.LastWriteTime.HasValue)
+                if (!testOnly)
                 {
-                    TrySetTimestamp(finalPath!, entry.LastWriteTime.Value);
+                    if (options.PreserveTimestamps && entry.LastWriteTime.HasValue)
+                    {
+                        TrySetTimestamp(finalPath!, entry.LastWriteTime.Value);
+                    }
+
+                    if (options.PreserveUnixAttributes && (entry as IUnixEntry)?.UnixMode is { } unixMode)
+                    {
+                        TrySetUnixMode(finalPath!, unixMode);
+                    }
                 }
 
                 RaiseEntryCompleted(entry);
@@ -551,15 +780,33 @@ public sealed class GeneralZipReader : IDisposable
         }
     }
 
-    private void RaiseEntryStarted(IArchiveEntry entry) => EntryStarted?.Invoke(this, new EntryEventArgs(entry));
+    private void RaiseEntryStarted(IArchiveEntry entry)
+    {
+        lock (_eventLock)
+        {
+            EntryStarted?.Invoke(this, new EntryEventArgs(entry));
+        }
+    }
 
-    private void RaiseEntryCompleted(IArchiveEntry entry) => EntryCompleted?.Invoke(this, new EntryEventArgs(entry));
+    private void RaiseEntryCompleted(IArchiveEntry entry)
+    {
+        lock (_eventLock)
+        {
+            EntryCompleted?.Invoke(this, new EntryEventArgs(entry));
+        }
+    }
 
-    private void RaiseEntryFailed(IArchiveEntry entry, Exception ex) => EntryFailed?.Invoke(this, new EntryFailedEventArgs(entry, ex));
+    private void RaiseEntryFailed(IArchiveEntry entry, Exception ex)
+    {
+        lock (_eventLock)
+        {
+            EntryFailed?.Invoke(this, new EntryFailedEventArgs(entry, ex));
+        }
+    }
 
     // ---------- IO ----------
 
-    private static void CopyToFile(Stream source, string targetPath, int bufferSize, EntryProgressRelay relay, CancellationToken ct)
+    private static void CopyToFile(Stream source, string targetPath, int bufferSize, EntryProgressRelay? relay, CancellationToken ct)
     {
         using var target = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: false);
         var buffer = new byte[bufferSize];
@@ -568,18 +815,18 @@ public sealed class GeneralZipReader : IDisposable
         {
             ct.ThrowIfCancellationRequested();
             target.Write(buffer, 0, read);
-            relay.Report(read);
+            relay?.Report(read);
         }
     }
 
-    private static void Drain(Stream source, int bufferSize, EntryProgressRelay relay, CancellationToken ct)
+    private static void Drain(Stream source, int bufferSize, EntryProgressRelay? relay, CancellationToken ct)
     {
         var buffer = new byte[bufferSize];
         int read;
         while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
         {
             ct.ThrowIfCancellationRequested();
-            relay.Report(read);
+            relay?.Report(read);
         }
     }
 
@@ -592,6 +839,84 @@ public sealed class GeneralZipReader : IDisposable
         catch (Exception)
         {
             // 时间戳设置失败不影响解压结果
+        }
+    }
+
+    /// <summary>应用 Unix 权限位（仅 Unix 平台的 net8+ 生效；失败不影响解压结果）。</summary>
+    private static void TrySetUnixMode(string path, uint mode)
+    {
+#if NET8_0_OR_GREATER
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        try
+        {
+            var perms = (System.IO.UnixFileMode)(mode & 0xFFF);
+            if (File.Exists(path))
+            {
+                File.SetUnixFileMode(path, perms);
+            }
+        }
+        catch (Exception)
+        {
+            // 权限应用失败不影响解压结果
+        }
+#endif
+    }
+
+    /// <summary>
+    /// 符号链接条目处理。返回 true 表示条目已按符号链接处理（无需常规复制）。
+    /// 策略 Skip → 调用方按普通文件写入；策略 Preserve → 创建链接（失败降级为普通文件）。
+    /// </summary>
+    private bool TryCreateSymlink(Stream source, IArchiveEntry entry, string targetPath, ExtractionOptions options)
+    {
+        var unix = entry as IUnixEntry;
+        var mode = unix?.UnixMode;
+        var isSymlink = mode.HasValue && (mode & 0xF000u) == 0xA000u;
+        if (!isSymlink)
+        {
+            return false;
+        }
+
+        if (options.SymlinkPolicy != SymlinkPolicy.Preserve)
+        {
+            // Skip 策略：不建链接——目标文本作为普通文件落盘（保留信息、无攻击面）
+            CopyToFile(source, targetPath, options.BufferSize, relay: null, default);
+            return true;
+        }
+
+        // 链接目标：TAR 在头部携带；ZIP 等以条目内容承载
+        string target;
+        if (unix!.SymlinkTarget != null)
+        {
+            target = unix.SymlinkTarget;
+            // ZIP/TAR 符号链接条目可能同时携带数据流：消耗掉以防流状态不一致
+            Drain(source, options.BufferSize, relay: null, default);
+        }
+        else
+        {
+            using var ms = new MemoryStream();
+            source.CopyTo(ms, options.BufferSize);
+            target = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        try
+        {
+#if NET8_0_OR_GREATER
+            File.CreateSymbolicLink(targetPath, target);
+#else
+            // netstandard2.0 无托管符号链接 API：降级为普通文件
+            File.WriteAllText(targetPath, target, System.Text.Encoding.UTF8);
+#endif
+            return true;
+        }
+        catch (Exception)
+        {
+            // Windows 无开发者模式等场景：降级为普通文件写入目标文本
+            File.WriteAllText(targetPath, target, System.Text.Encoding.UTF8);
+            return true;
         }
     }
 

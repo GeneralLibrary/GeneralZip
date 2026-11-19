@@ -41,7 +41,7 @@ public class NativeCoreTests : IDisposable
         return true;
     }
 
-    private static string NewPassword() => "Nk" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)).TrimEnd('=');
+    private static string NewPassword() => "Nk" + System.Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)).TrimEnd('=');
 
     [Fact]
     public void DefaultRegistry_ContainsNativeFormats_WithoutExplicitBootstrap()

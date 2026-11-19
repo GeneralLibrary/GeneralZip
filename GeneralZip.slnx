@@ -6,6 +6,10 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/GeneralZip/GeneralZip.csproj" />
+    <Project Path="src/GeneralZip.Cli/GeneralZip.Cli.csproj" />
+  </Folder>
+  <Folder Name="/fuzz/">
+    <Project Path="fuzz/GeneralZip.Fuzz/GeneralZip.Fuzz.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/GeneralZip.Native.Tests/GeneralZip.Native.Tests.csproj" />

@@ -1,4 +1,7 @@
-# GeneralZip SM4-GM 加密 ZIP 容器规范（v1）
+# GeneralZip 国密加密 ZIP 容器规范（v1.1）
+
+> v1.1 变更：新增 KdfId=2（PBKDF2-HMAC-SHA256）；新增 §10 SM2-GM 数字信封容器（extra field 0x4D54）。
+> v1 的 SM4-GM 容器（extra field 0x4D53）二进制布局不变，完全向后兼容。
 
 > 状态：**稳定** · 本规范定义 GeneralZip 组件对 ZIP 格式的国密（SM4/SM3）加密扩展。
 > ZIP/APPNOTE 无官方 SM4 加密标准，本规范为自定义 vendor 扩展；按本规范实现的任意第三方库可与 GeneralZip 互通。
@@ -129,10 +132,72 @@ SM3("abcd" 重复 16 次，共 64 字节)
 |---|---|
 | 口令强度 | 安全性受限于口令熵；建议 ≥ 12 字符随机口令 |
 | 条目名/大小泄露 | 文件名、时间戳、大小为明文（与 WinZip AES 相同）；需元数据保密请用 v2 规划的"整包头加密容器" |
-| 多接收方 | v1 仅口令加密；SM2 数字信封（一人加密、多人解密）为预留扩展点 |
+| 多接收方 | 见 §10：SM2-GM 数字信封（公钥加密数据密钥，无共享口令） |
 | 防暴力破解 | Iterations 仅提升成本；在线场景应配合应用层限速 |
 
 ## 9. 版本策略
 
 - Version 字节变更即不兼容；新增算法模式（如 SM4-CBC、SM4-GCM 类 AEAD）以新 CipherMode/KdfId 值表达，读取端遇到未知值抛 `UnsupportedFormatException`。
 - 本规范与组件同版本演进；规范级变更记录于文档顶部"状态"行。
+
+## 10. SM2-GM 数字信封容器（v1.1 新增）
+
+### 10.1 概述
+
+AlgorithmId = `SM2-GM`，extra field 标识 `0x4D54`（ASCII "GMSN"，紧邻 0x4D53 "GMSM"）。
+口令无关：写侧只需接收方 SM2 公钥（实现 `IPasswordlessWriteProvider`）；读侧以 SM2 私钥
+（hex 大端 32 字节）经既有口令协商管线（`PasswordRequired` 事件 / `options.Password`）提供。
+
+### 10.2 数据密钥与条目加密
+
+- 每条目随机生成：`K_enc`（16B，SM4 密钥）‖ `K_mac`（32B，SM3-HMAC 密钥）‖ `IV`（16B）= 64B 密钥块
+- 数据保护：SM4-CTR + SM3-HMAC（Encrypt-then-MAC），AAD = extra field 数据区，
+  与 v1 的 SM4-GM 数据布局完全一致（复用同一 Ctr 流实现）
+
+### 10.3 密钥封装（SM2 ECIES）
+
+密钥块经 SM2 公钥加密（GB/T 32918.4，KDF-SM3 + SM3 完整性，现行标准排列）：
+
+```
+C = C1(65B: 04+X+Y) + C3(32B SM3) + C2(64B) = 161B
+```
+
+- 曲线：GB/T 32918.5-2017 推荐曲线，纯 C# 仿射坐标实现
+- 解封：[dB]C1 得 (x2,y2) → KDF-SM3 → C2⊕t → 校验 C3 = SM3(x2+M+y2)
+  （错误私钥/密文篡改在 C3 处快速失败 → InvalidPasswordException）
+- SM2 互操作性经独立实现（Python gmssl）双向交叉验证
+
+### 10.4 Extra Field 0x4D54 二进制格式
+
+```
+偏移  长度  字段
+0     4     Magic "GMSN"（0x47 0x4D 0x53 0x4E）
+4     1     SpecVersion = 1
+5     1     CipherMode = 1（SM4-CTR）
+6     1     KdfId = 0（信封模式：数据密钥不经口令派生）
+7     4     EnvLen（LE32）= 161
+11    161   Envelope = SM2 ECIES(K_enc+K_mac+IV)
+155   2     RealMethod（LE16，与 0x4D53 尾部约定一致）
+```
+
+HMAC（K_mac）覆盖：本 extra field 数据区（AAD）+ 全部密文；MAC 尾部 32B 追加在条目数据末尾
+（与 v1 相同）。中央目录与本地头的写入约定（method=99、FlagEncrypted）与 §5 相同。
+
+### 10.5 互通实现清单
+
+1. 解析 0x4D54 → 校验 magic/version/EnvLen
+2. 读侧：口令通道取 SM2 私钥 hex → SM2 解封 → K_enc/K_mac/IV
+3. SM4-CTR 解密 + SM3-HMAC 校验（AAD = extra field 数据区）
+4. RealMethod 还原真实压缩方法（Deflate/Store/BZip2/Zstd/LZMA 均可叠加）
+
+### 10.6 KDF 标识注册表（v1.1 扩展，0x4D53 容器内 KdfId 字节）
+
+| KdfId | 派生函数 | 默认迭代 | 说明 |
+|---|---|---|---|
+| 1 | SM3-PBKDF2-HMAC（RFC 8018） | 10_000 | 默认（国密） |
+| 2 | PBKDF2-HMAC-SHA256（RFC 8018） | 10_000 | 国际方案；netstandard2.0 下为纯 C# 循环实现 |
+| 其它 | 自定义 | — | 读取端抛 UnsupportedFormatException；第三方经 IKdfProvider（SpecId）注册 |
+
+KDF 经 GeneralZipEncryptionRegistry.Kdfs 注册表解析；写侧由 ArchiveWriteOptions.KdfAlgorithmId
+选择（null = 算法默认 SM3-PBKDF2）。
+

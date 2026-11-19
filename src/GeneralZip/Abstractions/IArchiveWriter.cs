@@ -41,6 +41,23 @@ public sealed class ArchiveEntryMetadata
 
     public string? Comment { get; set; }
 
+    /// <summary>
+    /// Unix 权限模式（st_mode，含类型位）。ZIP 以 Unix host（3）写入 ExternalAttributes，
+    /// TAR 写入 mode 字段；null = 不携带（ZIP 用 MS-DOS host，TAR 用 0644/0755 默认）。
+    /// </summary>
+    public uint? UnixMode { get; set; }
+
     /// <summary>归档内不可见的外部源路径（供实现优化，如原生核心直接落盘文件）；门面层设置。</summary>
     public string? SourcePath { get; set; }
+
+    /// <summary>深拷贝（调用方可继续复用原对象）。</summary>
+    public ArchiveEntryMetadata Clone() => new()
+    {
+        Size = Size,
+        LastWriteTime = LastWriteTime,
+        Crc32 = Crc32,
+        Comment = Comment,
+        UnixMode = UnixMode,
+        SourcePath = SourcePath,
+    };
 }
