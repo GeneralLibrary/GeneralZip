@@ -19,8 +19,7 @@ public class NativeCodecTests : IDisposable
     public NativeCodecTests()
     {
         Directory.CreateDirectory(_dir);
-        NativeCoreLoader.TryLoad();
-        GeneralZipNative.Initialize(); // 注入原生编解码桥接（BZ2/XZ/ZSTD/LZ4 路由需要）
+        NativeCoreLoader.TryLoad(); // 预热核心探测（引导本身已随 Default 注册表装配隐式完成）
     }
 
     public void Dispose()

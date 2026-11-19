@@ -61,7 +61,6 @@ public class NativeFixtureTests
             return;
         }
 
-        GeneralZipNative.Initialize();
 
         // 显式 "\n" 拼接：内容字节不随源码行尾（CRLF/LF）漂移，保证跨平台一致
         var noteText = string.Join("\n",
@@ -131,7 +130,6 @@ public class NativeFixtureTests
             return;
         }
 
-        GeneralZipNative.Initialize();
 
         // 显式 "\n" 拼接：内容字节不随源码行尾（CRLF/LF）漂移，保证跨平台一致
         var noteText = string.Join("\n",

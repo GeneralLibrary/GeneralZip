@@ -160,7 +160,7 @@ jobs:
           using GeneralZip;
           using static GeneralZip.GeneralZip;
 
-          Initialize();
+          // 无任何显式引导调用：验证零初始化的隐式引导端到端可用
           Console.WriteLine($"native={GeneralZip.Native.NativeCoreLoader.IsAvailable}");
 
           var dir = Path.Combine(Path.GetTempPath(), "gzp-smoke");
