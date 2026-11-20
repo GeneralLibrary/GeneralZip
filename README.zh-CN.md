@@ -33,7 +33,7 @@ dotnet add package GeneralZip
 目标框架 `netstandard2.0` 与 `net8.0`。
 
 > 一个包，能力齐全。包内已捆绑 win-x64、linux-x64、linux-musl-x64、osx-x64、osx-arm64
-> 五个平台的预编译 Rust 原生核心，`GeneralZip.Initialize()` 会自动加载；
+> 五个平台的预编译 Rust 原生核心，首次使用时自动探测并加载，**无需任何初始化调用**；
 > 若平台无对应核心，7z/RAR 与原生编解码优雅降级，其余能力不受影响。
 
 ## 快速开始
@@ -42,8 +42,6 @@ dotnet add package GeneralZip
 
 ```csharp
 using GeneralZip;
-
-GeneralZip.Initialize();  // 幂等引导
 
 // 目录 → 归档（格式由扩展名决定）
 await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip");
@@ -133,8 +131,8 @@ GeneralZip.Registry.Register(new MyArchiveFormat());
 GeneralZip.Encryption.Register(new MyEncryptionProvider());
 ```
 
-> 引导类与组件同名（`namespace GeneralZip` 中的 `class GeneralZip`）。
-> 若需要与其它类型限定写法混用，可用 `using static GeneralZip.GeneralZip;` 裸调用 `Initialize()` / `CompressAsync()` 等。
+> 门面类与组件同名（`namespace GeneralZip` 中的 `class GeneralZip`）。
+> 若需要与其它类型限定写法混用，可用 `using static GeneralZip.GeneralZip;` 裸调用 `CompressAsync()` 等。
 
 ## 格式与加密矩阵
 
@@ -186,7 +184,7 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 2. 应用目录下的 `runtimes/<RID>/native/`；
 3. `GENERALZIP_NATIVE` 环境变量指向的路径，
 
-然后启动时调用一次 `GeneralZip.Initialize()`（一行式 API 内部已自动调用）。
+首次使用库时核心会被自动探测并加载，无需任何初始化调用。
 
 ## 示例文件
 

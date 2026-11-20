@@ -17,7 +17,7 @@
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ 门面层   GeneralZip (静态引导/门面) /                        │ 一行式与流式 API
+│ 门面层   GeneralZip (静态门面) /                              │ 一行式与流式 API
 │          GeneralZipReader / GeneralZipWriter                 │
 ├────────────────────────────────────────────────────────────┤
 │ 事件层   EntryStarted / EntryProgress / EntryCompleted /    │ 进度
@@ -65,10 +65,10 @@ GeneralZip.sln
 │     │  ├─ Tar/                 TAR / TAR.GZ / TAR.BZ2
 │     │  └─ Codecs/              GZ/BZ2/XZ/Zstd/LZ4 单文件编解码格式
 │     ├─ Native/                 Rust 核心 P/Invoke 绑定（能力协商 + 降级）
-│     ├─ GeneralZip.cs           启动引导（含原生自动装配）+ 静态门面
+│     ├─ GeneralZip.cs           静态门面（零初始化）
 │     ├─ ArchiveReader.cs        读取封装（事件源）
 │     ├─ ArchiveWriter.cs        写入封装（事件源）
-│     └─ ArchiveFormatRegistry.cs 格式注册表 + 魔数探测
+│     └─ ArchiveFormatRegistry.cs 格式注册表 + 魔数探测（Default 装配时隐式原生引导）
 ├─ tests/
 │  ├─ GeneralZip.Tests/          核心测试（含互操作 oracle）
 │  └─ GeneralZip.Native.Tests/   Rust 核心集成测试
@@ -301,14 +301,15 @@ gzp_close(handle) -> status
 ```
 NativeCoreLoader.TryLoad()
   ├─ 按 RID 探测 runtimes/{rid}/native/generalzip_native.{dll|so|dylib}
-  │    以及应用目录 / GENERALZIP_NATIVE_PATH 环境变量
+  │    以及应用目录 / GENERALZIP_NATIVE 环境变量
   ├─ 载入成功 → gzp_capabilities() → 按 bit 注册 SevenZipFormat / RarFormat
   └─ 载入失败 → 不注册；用户访问 7z/RAR 时抛
        NativeCoreMissingException("...如何安装/部署 native core...")
 ```
 
-原生绑定与托管核心同包发布：`GeneralZip.Initialize()` 自动调用
-`GeneralZipNative.Initialize()`（幂等）完成能力注册；核心二进制缺失时仅降级、不抛异常。
+原生绑定与托管核心同包发布，引导完全隐式：首次访问任何 API 时，
+`GeneralZipFormatRegistry.Default` 的装配自动调用 `GeneralZipNative.Bootstrap()`
+（幂等）完成能力注册与编解码桥接注入；核心二进制缺失时仅降级、不抛异常。
 
 ## 8. 关键流程
 

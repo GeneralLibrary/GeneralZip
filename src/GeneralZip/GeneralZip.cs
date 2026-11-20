@@ -8,43 +8,18 @@ using GeneralZip.Abstractions;
 namespace GeneralZip;
 
 /// <summary>
-/// 组件启动引导与门面入口（与组件同名）。
+/// 静态门面入口（与组件同名，零初始化：内置格式/加密算法与原生能力均在首次使用时隐式装配）。
 /// <para>
-/// <see cref="Initialize"/> 完成内置格式/加密算法注册（幂等，可重复调用）；
-/// 随后即可使用一行式 API（<see cref="CompressAsync"/>/<see cref="ExtractAsync"/> 等），
+/// 直接使用一行式 API（<see cref="CompressAsync"/>/<see cref="ExtractAsync"/> 等），
 /// 需要事件与精细控制时使用 <see cref="GeneralZipReader"/> / <see cref="GeneralZipWriter"/>。
 /// </para>
 /// <code>
-/// GeneralZip.Initialize();
 /// await GeneralZip.CompressAsync(@"C:\data", @"D:\out.zip",
 ///     o => { o.EncryptionAlgorithm = "SM4-GM"; o.Password = "p@ss"; });
 /// </code>
 /// </summary>
 public static class GeneralZip
 {
-    private static int _initialized;
-
-    /// <summary>
-    /// 启动引导：确保内置格式提供者与加密算法已注册（幂等、线程安全）。
-    /// 同时尝试加载内置 Rust 原生核心（7z/RAR/原生编解码）；核心二进制缺失时静默降级，
-    /// 纯托管能力不受影响（可用 <see cref="GeneralZip.Native.NativeCoreLoader.IsAvailable"/> 探测）。
-    /// </summary>
-    public static void Initialize()
-    {
-        if (Interlocked.Exchange(ref _initialized, 1) == 1)
-        {
-            return;
-        }
-
-        // 触发两个默认注册表的静态装配
-        _ = GeneralZipFormatRegistry.Default;
-        _ = GeneralZipEncryptionRegistry.Default;
-
-        // 原生引导（幂等；加载失败仅返回 false，不抛异常）。
-        // global:: 限定：类名 GeneralZip 会遮蔽同名命名空间。
-        _ = global::GeneralZip.Native.GeneralZipNative.Initialize();
-    }
-
     /// <summary>组件版本。</summary>
     public static Version Version => typeof(GeneralZip).Assembly.GetName().Version ?? new Version(0, 0, 0);
 

@@ -5,60 +5,50 @@ using GeneralZip.Formats.Codecs;
 namespace GeneralZip.Native;
 
 /// <summary>
-/// GeneralZip 原生能力入口：一行注册 7z/RAR 提供者与原生编解码桥接。
-/// <code>
-/// GeneralZip.Initialize();          // 核心引导（幂等）；已并入原生引导调用
-/// GeneralZipNative.Initialize();    // 原生引导（幂等，可显式调用；7z/RAR/bz2/xz/zstd/lz4）
-/// </code>
+/// GeneralZip 原生能力入口：原生引导已隐式完成——首次访问任何 API 时，
+/// <see cref="GeneralZipFormatRegistry"/> 的装配会自动加载核心并注册
+/// 7z/RAR 提供者与原生编解码桥接（幂等；7z/RAR/bz2/xz/zstd/lz4），无需手动调用。
 /// 原生核心缺失时安全降级：7z/RAR 不注册、原生编解码格式报明确异常；纯托管能力不受影响。
 /// </summary>
 public static class GeneralZipNative
 {
-    private static readonly object Lock = new();
-    private static bool _initialized;
-
-    /// <summary>加载原生核心并注册能力（幂等、线程安全）。返回核心是否可用。</summary>
-    public static bool Initialize()
+    /// <summary>
+    /// 原生引导（幂等）：加载原生核心；成功时向 <paramref name="registry"/> 注册 7z/RAR
+    /// （registry 为 null 则跳过注册）并注入编解码桥接委托，失败静默降级。
+    /// 不访问 <see cref="GeneralZipFormatRegistry"/>——由调用方传入实例，
+    /// 避免静态构造器重入拿到半初始化的注册表。
+    /// </summary>
+    internal static void Bootstrap(GeneralZipFormatRegistry? registry)
     {
-        lock (Lock)
+        if (!NativeCoreLoader.TryLoad())
         {
-            if (_initialized)
-            {
-                return NativeCoreLoader.IsAvailable;
-            }
-
-            _initialized = true;
-
-            if (!NativeCoreLoader.TryLoad())
-            {
-                return false;
-            }
-
-            var registry = GeneralZipFormatRegistry.Default;
-
-            // 7z 能力（sevenz-rust2，纯 Rust）
-            if ((NativeCoreLoader.Capabilities & NativeCoreLoader.CapabilitySevenZ) != 0)
-            {
-                registry.Register(new SevenZipNativeFormat());
-            }
-
-            // RAR 能力（unrar 封装，需 C++ 工具链构建的原生核心）
-            if ((NativeCoreLoader.Capabilities & NativeCoreLoader.CapabilityRar) != 0)
-            {
-                registry.Register(new RarNativeFormat());
-            }
-
-            // 单文件编解码桥接（bzip2 / xz / zstd / lz4）：核心经 NativeBridge 间接调用
-            var caps = NativeCoreLoader.Capabilities;
-            NativeBridge.IsAvailable = () => NativeCoreLoader.IsAvailable;
-            NativeBridge.Compress = (codec, src, dst) =>
-                InvokeCodec(codec, src, dst, compress: true, caps);
-            NativeBridge.Decompress = (codec, src, dst) =>
-                InvokeCodec(codec, src, dst, compress: false, caps);
-
-            return true;
+            return;
         }
+
+        var caps = NativeCoreLoader.Capabilities;
+
+        // 7z 能力（sevenz-rust2，纯 Rust）
+        if (registry != null && (caps & NativeCoreLoader.CapabilitySevenZ) != 0)
+        {
+            registry.Register(new SevenZipNativeFormat());
+        }
+
+        // RAR 能力（unrar 封装，需 C++ 工具链构建的原生核心）
+        if (registry != null && (caps & NativeCoreLoader.CapabilityRar) != 0)
+        {
+            registry.Register(new RarNativeFormat());
+        }
+
+        // 单文件编解码桥接（bzip2 / xz / zstd / lz4）：核心经 NativeBridge 间接调用
+        NativeBridge.IsAvailable = () => NativeCoreLoader.IsAvailable;
+        NativeBridge.Compress = (codec, src, dst) =>
+            InvokeCodec(codec, src, dst, compress: true, caps);
+        NativeBridge.Decompress = (codec, src, dst) =>
+            InvokeCodec(codec, src, dst, compress: false, caps);
     }
+
+    /// <summary>确保编解码桥接已注入（自定义注册表场景的兜底，幂等）。</summary>
+    internal static void EnsureBridge() => Bootstrap(null);
 
     private static bool InvokeCodec(string codec, string src, string dst, bool compress, uint caps)
     {

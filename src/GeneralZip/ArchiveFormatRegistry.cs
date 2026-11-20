@@ -30,7 +30,18 @@ public sealed class GeneralZipFormatRegistry
         }
     }
 
-    public static GeneralZipFormatRegistry Default { get; } = new(populateBuiltins: true);
+    public static GeneralZipFormatRegistry Default { get; } = CreateDefault();
+
+    /// <summary>
+    /// 默认注册表装配：内置格式注册后即触发原生引导（幂等）。
+    /// 原生核心在位时追加 7z/RAR 并注入编解码桥接；缺失时静默降级，纯托管能力不受影响。
+    /// </summary>
+    private static GeneralZipFormatRegistry CreateDefault()
+    {
+        var registry = new GeneralZipFormatRegistry(populateBuiltins: true);
+        global::GeneralZip.Native.GeneralZipNative.Bootstrap(registry);
+        return registry;
+    }
 
     /// <summary>注册格式提供者（重复注册同名格式将覆盖旧的）。</summary>
     public void Register(IArchiveFormat format)

@@ -44,6 +44,21 @@ public class NativeCoreTests : IDisposable
     private static string NewPassword() => "Nk" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)).TrimEnd('=');
 
     [Fact]
+    public void DefaultRegistry_ContainsNativeFormats_WithoutExplicitBootstrap()
+    {
+        if (SkipIfNoCore()) return;
+
+        // 隐式引导回归防护：不调用任何引导 API，Default 注册表装配时应已注册 7z/RAR
+        //（RAR 按能力位协商，本地核心未开启 rar feature 时不注册）
+        var names = GeneralZipFormatRegistry.Default.Snapshot().Select(f => f.Info.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("7Z", names);
+        if ((NativeCoreLoader.Capabilities & NativeCoreLoader.CapabilityRar) != 0)
+        {
+            Assert.Contains("RAR", names);
+        }
+    }
+
+    [Fact]
     public void CoreLoads_WithSevenZCapability()
     {
         if (!NativeCoreLoader.TryLoad())
@@ -60,7 +75,6 @@ public class NativeCoreTests : IDisposable
     public void SevenZip_Roundtrip_Plain()
     {
         if (SkipIfNoCore()) return;
-        GeneralZipNative.Initialize();
 
         var src = Path.Combine(_dir, "src");
         Directory.CreateDirectory(Path.Combine(src, "sub"));
@@ -91,7 +105,6 @@ public class NativeCoreTests : IDisposable
     public void SevenZip_Encrypted_Roundtrip_And_WrongPassword()
     {
         if (SkipIfNoCore()) return;
-        GeneralZipNative.Initialize();
 
         var archive = Path.Combine(_dir, "enc.7z");
         var password = NewPassword();
@@ -136,7 +149,6 @@ public class NativeCoreTests : IDisposable
     public void SevenZip_TestAll()
     {
         if (SkipIfNoCore()) return;
-        GeneralZipNative.Initialize();
 
         var archive = Path.Combine(_dir, "t.7z");
         using (var w = GeneralZipWriter.CreateNew(archive, formatName: "7Z"))
@@ -154,7 +166,6 @@ public class NativeCoreTests : IDisposable
     public void Xz_Compress_Decompress_Roundtrip()
     {
         if (SkipIfNoCore()) return;
-        GeneralZipNative.Initialize();
 
         var src = Path.Combine(_dir, "in.txt");
         var compressed = Path.Combine(_dir, "out.xz");

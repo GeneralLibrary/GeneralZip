@@ -14,17 +14,26 @@ internal static class NativeCodecRouter
     public static void EnsureCore()
     {
         // 通过桥接委托间接访问原生核心，保持编解码实现与 P/Invoke 细节的边界：
-        // GeneralZipNative.Initialize()（GeneralZip.Initialize() 已自动调用）注入 NativeBridge 的实现。
+        // NativeBridge 的实现由隐式引导注入（Default 注册表装配时自动调用 Bootstrap）。
         if (!NativeBridgeProbe.IsAvailableSafe())
         {
-            throw new NativeCoreMissingException(
-                "This codec format requires the Rust native core (generalzip_native), which was not found next to the application. " +
-                "Place generalzip_native.dll/.so/.dylib in the app directory or under runtimes/<RID>/native/, " +
-                "or re-save the archive as ZIP/TAR.GZ or another pure-managed format.");
+            // 兜底：默认注册表未被触碰时（自定义注册表场景）桥接尚未注入，显式拉起一次。
+            global::GeneralZip.Native.GeneralZipNative.EnsureBridge();
+            if (!NativeBridgeProbe.IsAvailableSafe())
+            {
+                throw new NativeCoreMissingException(
+                    "This codec format requires the Rust native core (generalzip_native), which was not found next to the application. " +
+                    "Place generalzip_native.dll/.so/.dylib in the app directory or under runtimes/<RID>/native/, " +
+                    "or re-save the archive as ZIP/TAR.GZ or another pure-managed format.");
+            }
         }
     }
 
-    internal static bool IsCoreAvailable() => NativeBridge.IsAvailable?.Invoke() ?? false;
+    internal static bool IsCoreAvailable()
+    {
+        global::GeneralZip.Native.GeneralZipNative.EnsureBridge();
+        return NativeBridgeProbe.IsAvailableSafe();
+    }
 
     internal static void Compress(string codec, string source, string destination)
     {
@@ -48,12 +57,12 @@ internal static class NativeCodecRouter
 }
 
 /// <summary>
-/// 原生核心桥接点：GeneralZip.Native 包在 Initialize 时注入实现。
+/// 原生核心桥接点：隐式引导（GeneralZipNative.Bootstrap）注入实现。
 /// 核心包经此间接使用原生能力，保持"核心零 P/Invoke"的架构边界。
 /// </summary>
 public static class NativeBridge
 {
-    /// <summary>原生核心是否已加载。GeneralZipNative.Initialize 注入。</summary>
+    /// <summary>原生核心是否已加载。隐式引导注入。</summary>
     public static Func<bool>? IsAvailable { get; set; }
 
     /// <summary>整文件编解码：codec ∈ {bzip2, xz, zstd, lz4}。返回是否成功（false = 不支持该 codec）。</summary>

@@ -16,8 +16,7 @@ var sizeMb = args.Length > 0 && int.TryParse(args[0], out var mb) ? mb : 8;
 var warmups = args.Length > 1 && int.TryParse(args[1], out var w) ? w : 1;
 var runs = args.Length > 2 && int.TryParse(args[2], out var r) ? r : 3;
 
-var nativeOk = GeneralZipNative.Initialize();
-Initialize();
+var nativeOk = NativeCoreLoader.TryLoad();
 
 Console.WriteLine($"GeneralZip benchmark  native={(nativeOk ? "available" : "missing (skips 7z/BZ2/XZ/ZSTD/LZ4)")}");
 Console.WriteLine($"Runtime: {Environment.Version}  OS: {Environment.OSVersion.VersionString}  Logical cores: {Environment.ProcessorCount}");

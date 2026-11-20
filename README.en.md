@@ -33,9 +33,10 @@ dotnet add package GeneralZip
 Targets `netstandard2.0` and `net8.0`.
 
 > One package, everything included. The library bundles prebuilt Rust native cores for
-> win-x64, linux-x64, linux-musl-x64, osx-x64 and osx-arm64; `GeneralZip.Initialize()`
-> loads them automatically. If the core is missing for your platform, 7z/RAR and the
-> native codecs degrade gracefully; everything else keeps working.
+> win-x64, linux-x64, linux-musl-x64, osx-x64 and osx-arm64; they are detected and loaded
+> automatically on first use — no initialization call needed. If the core is missing for
+> your platform, 7z/RAR and the native codecs degrade gracefully; everything else keeps
+> working.
 
 ## Quick Start
 
@@ -43,8 +44,6 @@ Targets `netstandard2.0` and `net8.0`.
 
 ```csharp
 using GeneralZip;
-
-GeneralZip.Initialize();  // idempotent bootstrap
 
 // Directory → archive (format is chosen by the file extension)
 await GeneralZip.CompressAsync(@"C:\data", @"D:\backup.zip");
@@ -187,7 +186,8 @@ Place `generalzip_native.dll/.so/.dylib` in one of:
 2. `runtimes/<RID>/native/` under the app directory,
 3. any path referenced by the `GENERALZIP_NATIVE` environment variable,
 
-then call `GeneralZip.Initialize()` once (already done implicitly by the one-shot APIs).
+The core is picked up automatically the first time you use the library — no
+initialization call is needed.
 
 ## Sample Files
 

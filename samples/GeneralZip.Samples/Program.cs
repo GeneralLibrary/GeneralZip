@@ -6,9 +6,8 @@ using static GeneralZip.GeneralZip;   // 启动引导类与组件同名：using 
 // 演示用口令：运行时拼接派生（避免源码硬编码；实际应用请从密钥管理服务/用户输入获取）
 static string DemoPassword(string label) => "GZ-" + label + "-Demo";
 
-// ===== 0) 启动引导：核心注册表 + 可选原生核心 =====
-Initialize();                          // 幂等：确保内置格式/加密算法注册
-if (GeneralZipNative.Initialize())     // 可选：Rust 原生核心（7z/xz 能力；缺失时优雅降级）
+// ===== 0) 原生核心状态展示（引导已隐式完成，无需手动调用） =====
+if (NativeCoreLoader.TryLoad())        // 可选：Rust 原生核心（7z/xz 能力；缺失时优雅降级）
 {
     Console.WriteLine($"[native core] v{GeneralZipNative.CoreVersion} loaded (7z/xz available)");
 }
@@ -31,9 +30,9 @@ var zip = Path.Combine(work, "backup.zip");
 await CompressAsync(src, zip, o => o.Level = CompressionLevelChoice.Optimal);
 Console.WriteLine($"[one-liner] compressed: {zip} ({new FileInfo(zip).Length}B, format {DetectFormat(zip)?.Name})");
 
-// ===== 1.5) 启动引导说明 =====
-// GeneralZip.Initialize() 为幂等引导入口（确保内置格式/算法注册，并自动加载内置 Rust 原生核心），
-// 放在程序启动处调用一次即可；一行式 API 内部也会自动调用。
+// ===== 1.5) 引导说明 =====
+// GeneralZip 零初始化：内置格式/算法注册与 Rust 原生核心加载都在首次使用 API 时隐式完成
+//（Default 注册表装配时自动引导），核心缺失时优雅降级，纯托管能力不受影响。
 
 // ===== 2) 国密 SM4 加密 ZIP（加密写 → 解密读） =====
 var sm4Zip = Path.Combine(work, "secret-sm4.zip");

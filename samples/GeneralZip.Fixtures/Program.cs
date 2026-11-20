@@ -14,8 +14,7 @@ using static GeneralZip.GeneralZip;
 // 用法: dotnet run -c Release
 // =====================================================================
 
-Initialize();                     // 幂等引导（using static 裸调用）
-var nativeOk = GeneralZipNative.Initialize();
+var nativeOk = NativeCoreLoader.TryLoad();   // 引导已隐式完成，此处仅探测核心可用性
 
 var repoRoot = FindRepoRoot();
 Env.FixturesDir = Path.Combine(repoRoot, "samples", "fixtures");
