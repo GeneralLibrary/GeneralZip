@@ -33,6 +33,16 @@ internal static class GzpNative
     public static extern uint gzp_capabilities();
 
     [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]
+    public static extern int gzp_sm2_decrypt(
+        byte[] privateKey,
+        uint privateKeyLength,
+        byte[] ciphertext,
+        uint ciphertextLength,
+        byte[] output,
+        uint outputCapacity,
+        out uint outputLength);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Winapi)]
     public static extern void gzp_free(IntPtr ptr);
 
     public static string LastError()

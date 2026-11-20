@@ -45,17 +45,21 @@ public sealed class CpioFormat : IArchiveFormat
                 total += n;
             }
 
-            if (total < 6) return total == 2 && prefix[0] == 0x71 && prefix[1] == 0xC7;
+            if (total < 6) return total == 2 && IsBinaryMagic(prefix);
 
             var magic = System.Text.Encoding.ASCII.GetString(prefix, 0, 6);
             return magic == MagicNewc || magic == MagicCrc || magic == MagicOdc
-                   || (prefix[0] == 0x71 && prefix[1] == 0xC7);
+                   || IsBinaryMagic(prefix);
         }
         finally
         {
             if (restorePos >= 0) stream.Position = restorePos;
         }
     }
+
+    private static bool IsBinaryMagic(byte[] prefix)
+        => prefix[0] == 0x71 && prefix[1] == 0xC7
+           || prefix[0] == 0xC7 && prefix[1] == 0x71;
 
     public bool MatchesExtension(string extension)
         => extension.Equals(".cpio", StringComparison.OrdinalIgnoreCase);
@@ -184,7 +188,7 @@ public sealed class CpioFormat : IArchiveFormat
         if (b0 == 0x71 && b1 == 0xC7 || b0 == 0xC7 && b1 == 0x71)
         {
             formatKind = "binary";
-            var little = b0 == 0x71;
+            var little = b0 == 0xC7;
             ushort ReadU16()
             {
                 var lo = reader.ReadByte();

@@ -22,7 +22,7 @@
 - **One API, many formats** — ZIP, 7z, RAR, TAR, GZ, BZ2, XZ, Zstd, LZ4, Brotli, CPIO, ISO9660 (read) and CAB (read) with automatic magic-byte detection. No more "which library do I need for this file?"
 - **Encryption done right** — WinZip AES for universal interop, **SM4-GM** (Chinese national cryptography) as a documented custom ZIP extension, and an **SM2-GM envelope** (per-entry data keys sealed with SM2 public-key encryption — public-key recipients, no shared passwords). All behind one `EncryptionAlgorithm` switch, with a pluggable KDF registry.
 - **Built for apps, not just scripts** — full event system (progress, interactive password prompts, overwrite decisions, error policies), `CancellationToken` everywhere, `IProgress<T>` support, parallel compress/extract, `IAsyncEnumerable` entry enumeration.
-- **Zero third-party NuGet dependencies in the core** — cryptographic primitives (SM3/SM4/SM2) and the TAR/CPIO containers are pure C# implementations validated against GB/T standard test vectors; native codecs (7z/bzip2/xz/zstd/lz4/brotli) live in an optional Rust native core, all pure Rust, streamed with zero temp files.
+- **Zero third-party NuGet dependencies in the core** — SM3/SM4, SM2 encryption and key handling, and the TAR/CPIO containers are C# implementations validated against GB/T standard test vectors. SM2 private-key decryption uses the RustCrypto constant-time implementation in the native core, which is required to read SM2-GM archives; the native codecs (7z/bzip2/xz/zstd/lz4/brotli) are otherwise optional.
 
 ## Installation
 

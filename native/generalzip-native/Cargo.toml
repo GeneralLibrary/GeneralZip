@@ -26,6 +26,7 @@ bzip2 = "0.6"
 # brotli：纯 Rust 实现（单文件 .br 格式）
 brotli = "8"
 unrar = { version = "0.5", optional = true }
+sm2 = { version = "0.14", default-features = false, features = ["pke", "std"] }
 
 [profile.release]
 opt-level = 3

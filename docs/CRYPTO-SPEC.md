@@ -162,7 +162,7 @@ AlgorithmId = `SM2-GM`，extra field 标识 `0x4D54`（ASCII "GMSN"，紧邻 0x4
 C = C1(65B: 04+X+Y) + C3(32B SM3) + C2(64B) = 161B
 ```
 
-- 曲线：GB/T 32918.5-2017 推荐曲线，纯 C# 仿射坐标实现
+- 曲线：GB/T 32918.5-2017 推荐曲线；SM2 私钥解密通过 RustCrypto 原生核心执行，以使用常数时间的秘密标量运算
 - 解封：[dB]C1 得 (x2,y2) → KDF-SM3 → C2⊕t → 校验 C3 = SM3(x2+M+y2)
   （错误私钥/密文篡改在 C3 处快速失败 → InvalidPasswordException）
 - SM2 互操作性经独立实现（Python gmssl）双向交叉验证
@@ -200,4 +200,3 @@ HMAC（K_mac）覆盖：本 extra field 数据区（AAD）+ 全部密文；MAC �
 
 KDF 经 GeneralZipEncryptionRegistry.Kdfs 注册表解析；写侧由 ArchiveWriteOptions.KdfAlgorithmId
 选择（null = 算法默认 SM3-PBKDF2）。
-

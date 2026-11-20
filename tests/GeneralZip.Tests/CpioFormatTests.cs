@@ -162,8 +162,8 @@ public class CpioFormatTests : IDisposable
         var data = "bin"u8.ToArray();
 
         Span<byte> header = stackalloc byte[26];
-        header[0] = 0x71;
-        header[1] = 0xC7;
+        header[0] = 0xC7;
+        header[1] = 0x71;
         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(2), 0);   // dev
         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(4), 1);   // ino
         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(6), 0x8180); // mode 0600

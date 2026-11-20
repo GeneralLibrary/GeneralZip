@@ -57,12 +57,12 @@ jobs:
             cross: gcc-aarch64-linux-gnu
           - rid: win-arm64
             os: windows-latest
-            toolchain: stable-aarch64-pc-windows-gnu
-            target: aarch64-pc-windows-gnu
+            toolchain: stable-x86_64-pc-windows-gnu
+            target: aarch64-pc-windows-gnullvm
             use-dlltool-shim: true
           - rid: win-x86
             os: windows-latest
-            toolchain: stable-i686-pc-windows-gnu
+            toolchain: stable-x86_64-pc-windows-gnu
             target: i686-pc-windows-gnu
             use-dlltool-shim: true
           - rid: osx-x64

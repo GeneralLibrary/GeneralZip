@@ -22,19 +22,26 @@ internal sealed class NativeTempDecodeStream : Stream
         _tempPath = _tempDirectory.FilePath("decoded.out");
         try
         {
-            using (var output = File.Create(_tempPath, 65536))
+            try
             {
-                NativeCodecRouter.DecompressStream(source, output, codec, cancellationToken);
-            }
+                using (var output = File.Create(_tempPath, 65536))
+                {
+                    NativeCodecRouter.DecompressStream(source, output, codec, cancellationToken);
+                }
 
-            var buffer = new byte[81920];
-            int read;
-            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                var buffer = new byte[81920];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                _result = new FileStream(_tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
+            }
+            finally
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                source.Dispose();
             }
-
-            _result = new FileStream(_tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         }
         catch
         {

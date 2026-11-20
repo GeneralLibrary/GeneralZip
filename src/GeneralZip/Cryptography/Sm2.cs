@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using GeneralZip.Native;
 
 namespace GeneralZip.Cryptography;
 
@@ -198,6 +199,12 @@ public static class Sm2
     /// <exception cref="InvalidOperationException">完整性校验失败（C3 不符，通常为密钥错误或密文被篡改）。</exception>
     public static byte[] Decrypt(byte[] cipher, BigInteger privateKey)
     {
+        if (cipher == null) throw new ArgumentNullException(nameof(cipher));
+        if (privateKey <= 0 || privateKey >= Order - 1)
+        {
+            throw new ArgumentException("SM2 private key must be in [1, n-2]", nameof(privateKey));
+        }
+
         if (cipher.Length < 65 + 32 + 1)
         {
             throw new ArgumentException("SM2 ciphertext is too short", nameof(cipher));
@@ -215,35 +222,41 @@ public static class Sm2
             throw new ArgumentException("SM2 ciphertext C1 is not on the SM2 curve", nameof(cipher));
         }
 
-        var c1 = new Sm2Point { X = x1, Y = y1 };
-        var shared = Multiply(privateKey, c1);
-        if (shared.IsInfinity)
+        if (!NativeCoreLoader.TryLoad())
         {
-            throw new InvalidOperationException("SM2 decryption: [dB]C1 is the point at infinity");
+            throw new NativeCoreMissingException(
+                "SM2 decryption requires the constant-time native core; deploy generalzip_native for this runtime.");
         }
 
-        var x2 = To32Bytes(shared.X);
-        var y2 = To32Bytes(shared.Y);
-        var klen = cipher.Length - 97;
-        var t = KdfSm3(x2, y2, klen);
-
-        var c2 = new byte[klen];
-        Buffer.BlockCopy(cipher, 97, c2, 0, klen);
-        var message = new byte[klen];
-        for (var i = 0; i < klen; i++)
+        var privateBytes = To32BytesPrivate(privateKey);
+        var plaintext = new byte[cipher.Length - 97];
+        try
         {
-            message[i] = (byte)(c2[i] ^ t[i]);
-        }
+            var status = GzpNative.gzp_sm2_decrypt(
+                privateBytes, (uint)privateBytes.Length,
+                cipher, (uint)cipher.Length,
+                plaintext, (uint)plaintext.Length, out var outputLength);
+            if (status == GzpNative.GzpErrFormat)
+            {
+                throw new InvalidOperationException("SM2 decryption failed: C3 integrity mismatch (wrong key or corrupted ciphertext)");
+            }
 
-        var expected = Sm3Digest.Hash(Concat3(x2, message, y2));
-        var actual = new byte[32];
-        Buffer.BlockCopy(cipher, 65, actual, 0, 32);
-        if (!Kdf.FixedTimeEquals(expected, actual))
+            if (status == GzpNative.GzpErrArg)
+            {
+                throw new ArgumentException("Invalid SM2 private key or ciphertext");
+            }
+
+            if (status != GzpNative.GzpOk || outputLength != plaintext.Length)
+            {
+                throw new ArchiveCorruptedException("Native SM2 decryption failed");
+            }
+
+            return plaintext;
+        }
+        finally
         {
-            throw new InvalidOperationException("SM2 decryption failed: C3 integrity mismatch (wrong key or corrupted ciphertext)");
+            Kdf.Zero(privateBytes);
         }
-
-        return message;
     }
 
     /// <summary>SM2 X9.63 风格 KDF：Ha_i = SM3(Z ‖ ct_i)，ct 为 32 位大端计数（从 1 起）。</summary>

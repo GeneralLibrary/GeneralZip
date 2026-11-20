@@ -17,6 +17,14 @@ namespace GeneralZip.Tests;
 /// </summary>
 public class Sm2Tests
 {
+    private static bool HasCore => global::GeneralZip.Formats.Codecs.NativeCodecRouter.IsCoreAvailable();
+    private static bool SkipIfNoCore()
+    {
+        if (HasCore) return false;
+        Assert.True(true, "SKIPPED: native core not loaded");
+        return true;
+    }
+
     // gmssl（Python 独立实现）加密的锚点密文（C1‖C3‖C2，补 04 前缀后可解）
     private const string AnchorPrivateKeyHex =
         "8c8b89335e42c636156ee63fd0c7afa0e1c1845b4a86feea77daef214b2b6cd8";
@@ -28,6 +36,7 @@ public class Sm2Tests
     [Fact]
     public void AnchorVector_GmsslCiphertextDecrypts()
     {
+        if (SkipIfNoCore()) return;
         var d = Sm2KeyPair.FromPrivateKeyHex(AnchorPrivateKeyHex);
         var cipher = Convert.FromHexString("04" + AnchorCipherHexNo04);
         var plain = Sm2.Decrypt(cipher, d.PrivateKey);
@@ -45,6 +54,7 @@ public class Sm2Tests
     [Fact]
     public void EncryptDecrypt_RoundtripWithFixedK()
     {
+        if (SkipIfNoCore()) return;
         var kp = Sm2KeyPair.Generate();
         var pub = Sm2.DecodePoint(kp.PublicKey);
         var message = Encoding.UTF8.GetBytes("SM2 roundtrip 中文 0123456789");
@@ -61,6 +71,7 @@ public class Sm2Tests
     [Fact]
     public void Decrypt_TamperedC3Fails()
     {
+        if (SkipIfNoCore()) return;
         var kp = Sm2KeyPair.Generate();
         var message = Encoding.UTF8.GetBytes("tamper me");
         var cipher = Sm2.Encrypt(message, Sm2.DecodePoint(kp.PublicKey));
@@ -71,6 +82,7 @@ public class Sm2Tests
     [Fact]
     public void Decrypt_WrongKeyFails()
     {
+        if (SkipIfNoCore()) return;
         var kp = Sm2KeyPair.Generate();
         var other = Sm2KeyPair.Generate();
         var cipher = Sm2.Encrypt(Encoding.UTF8.GetBytes("for kp only"), Sm2.DecodePoint(kp.PublicKey));
@@ -115,6 +127,14 @@ public class Sm2Tests
 /// <summary>SM2-GM 信封加密（ZIP extra field 0x4D54）与 KDF 可插拔测试。</summary>
 public class Sm2GmAndKdfTests : IDisposable
 {
+    private static bool HasCore => global::GeneralZip.Formats.Codecs.NativeCodecRouter.IsCoreAvailable();
+    private static bool SkipIfNoCore()
+    {
+        if (HasCore) return false;
+        Assert.True(true, "SKIPPED: native core not loaded");
+        return true;
+    }
+
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"gzp-test-{Guid.NewGuid():N}");
 
     public Sm2GmAndKdfTests()
@@ -130,6 +150,7 @@ public class Sm2GmAndKdfTests : IDisposable
     [Fact]
     public void Sm2Gm_EnvelopeRoundtrip()
     {
+        if (SkipIfNoCore()) return;
         var zip = Path.Combine(_dir, "sm2.zip");
         var kp = Sm2KeyPair.Generate();
         var payload = Encoding.UTF8.GetBytes("SM2-GM envelope 中文 payload");
@@ -159,6 +180,7 @@ public class Sm2GmAndKdfTests : IDisposable
     [Fact]
     public void Sm2Gm_WrongPrivateKeyFailsFast()
     {
+        if (SkipIfNoCore()) return;
         var zip = Path.Combine(_dir, "sm2-wrong.zip");
         var kp = Sm2KeyPair.Generate();
         var other = Sm2KeyPair.Generate();

@@ -13,7 +13,9 @@ internal sealed class PrivateTempDirectory : IDisposable
         {
             Directory.CreateDirectory(Path);
         }
-        else if (Mkdir(Path, Convert.ToUInt32("700", 8)) != 0)
+        else if ((RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                      ? MkdirMac(Path, Convert.ToUInt32("700", 8))
+                      : Mkdir(Path, Convert.ToUInt32("700", 8))) != 0)
         {
             throw new IOException($"Could not create private temporary directory (errno {Marshal.GetLastWin32Error()})");
         }
@@ -30,4 +32,7 @@ internal sealed class PrivateTempDirectory : IDisposable
 
     [DllImport("libc", EntryPoint = "mkdir", SetLastError = true, CharSet = CharSet.Ansi)]
     private static extern int Mkdir(string path, uint mode);
+
+    [DllImport("/usr/lib/libSystem.B.dylib", EntryPoint = "mkdir", SetLastError = true, CharSet = CharSet.Ansi)]
+    private static extern int MkdirMac(string path, uint mode);
 }
