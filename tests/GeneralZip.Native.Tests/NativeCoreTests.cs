@@ -41,7 +41,22 @@ public class NativeCoreTests : IDisposable
         return true;
     }
 
-    private static string NewPassword() => "Nk" + Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)).TrimEnd('=');
+    private static string NewPassword() => "Nk" + System.Convert.ToBase64String(RandomNumberGenerator.GetBytes(8)).TrimEnd('=');
+
+    [Fact]
+    public void DefaultRegistry_ContainsNativeFormats_WithoutExplicitBootstrap()
+    {
+        if (SkipIfNoCore()) return;
+
+        // 隐式引导回归防护：不调用任何引导 API，Default 注册表装配时应已注册 7z/RAR
+        //（RAR 按能力位协商，本地核心未开启 rar feature 时不注册）
+        var names = GeneralZipFormatRegistry.Default.Snapshot().Select(f => f.Info.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("7Z", names);
+        if ((NativeCoreLoader.Capabilities & NativeCoreLoader.CapabilityRar) != 0)
+        {
+            Assert.Contains("RAR", names);
+        }
+    }
 
     [Fact]
     public void DefaultRegistry_ContainsNativeFormats_WithoutExplicitBootstrap()

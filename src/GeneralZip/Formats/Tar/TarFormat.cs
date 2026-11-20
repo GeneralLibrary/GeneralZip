@@ -106,12 +106,12 @@ public abstract class TarFormatBase : IArchiveFormat
             return WrapDecompress(stream);
         }
 
-        return new TarReader(OpenDecompressed, Info, options);
+        return new TarReader(OpenDecompressed, stream, Info, options);
     }
 
     public IArchiveWriter OpenWrite(Stream stream, ArchiveWriteOptions options)
     {
-        return new TarWriter(WrapCompress(stream), Info, options);
+        return new TarWriter(WrapCompress(stream), stream, Info, options);
     }
 
     private static int FillPrefix(Stream stream, byte[] prefix)
@@ -128,15 +128,18 @@ public abstract class TarFormatBase : IArchiveFormat
     }
 }
 
-/// <summary>TAR entry view.</summary>
-internal sealed class TarEntryView : IArchiveEntry
+/// <summary>TAR entry view（ustar 携带 mode；typeflag '2' 为符号链接，目标在头部）。</summary>
+internal sealed class TarEntryView : IArchiveEntry, IUnixEntry
 {
-    public TarEntryView(string fullName, long size, DateTimeOffset? mtime, bool isDirectory)
+    public TarEntryView(string fullName, long size, DateTimeOffset? mtime, bool isDirectory, int mode, string? linkName)
     {
         FullName = fullName;
         Size = size;
         LastWriteTime = mtime;
         IsDirectory = isDirectory;
+        var type = linkName != null ? 0xA000u : isDirectory ? 0x4000u : 0x8000u;
+        UnixMode = type | (unchecked((uint)mode) & 0x0FFFu);
+        SymlinkTarget = linkName;
     }
 
     public string FullName { get; }
@@ -157,6 +160,10 @@ internal sealed class TarEntryView : IArchiveEntry
     public string? EncryptionAlgorithm => null;
     public uint? Crc32 => null;
     public string? Comment => null;
+
+    public uint? UnixMode { get; }
+
+    public string? SymlinkTarget { get; }
 }
 
 /// <summary>TAR reader (over a decompression wrapper stream).</summary>
@@ -164,13 +171,15 @@ internal sealed class TarReader : IArchiveReader
 {
     private readonly List<TarEntryView> _entries = new();
     private Stream _inner;
+    private readonly Stream _sourceStream; // 用户/门面持有的底层流：不是我们的所有权
     private readonly Func<Stream> _reopenDecompressed;
     private TarStreamReader? _sequential; // sequential cursor for non-seekable mode
 
-    public TarReader(Func<Stream> openDecompressed, ArchiveFormatInfo info, ArchiveOpenOptions options)
+    public TarReader(Func<Stream> openDecompressed, Stream sourceStream, ArchiveFormatInfo info, ArchiveOpenOptions options)
     {
         Format = info;
         _reopenDecompressed = openDecompressed;
+        _sourceStream = sourceStream;
         _inner = openDecompressed();
 
         using (var probe = OpenTarStream())
@@ -189,7 +198,9 @@ internal sealed class TarReader : IArchiveReader
                     name,
                     entry.Size,
                     entry.ModTime == default ? null : entry.ModTime,
-                    name.EndsWith("/", StringComparison.Ordinal)));
+                    name.EndsWith("/", StringComparison.Ordinal),
+                    entry.Mode,
+                    entry.TypeFlag == (byte)'2' ? entry.LinkName : null));
             }
         }
 
@@ -201,9 +212,18 @@ internal sealed class TarReader : IArchiveReader
         {
             // non-seekable (e.g. tar.gz pipe stream): the probe exhausted the wrapper —
             // rebuild it and use it as the sequential cursor
-            _inner.Dispose();
+            DisposeInner();
             _inner = openDecompressed();
             _sequential = OpenTarStream();
+        }
+    }
+
+    /// <summary>只处置我们创建的解压包装；底层流（plain TAR 时即源流本身）不属于本对象。</summary>
+    private void DisposeInner()
+    {
+        if (!ReferenceEquals(_inner, _sourceStream))
+        {
+            _inner.Dispose();
         }
     }
 
@@ -244,7 +264,7 @@ internal sealed class TarReader : IArchiveReader
     public void Dispose()
     {
         _sequential?.Dispose();
-        _inner.Dispose();
+        DisposeInner();
     }
 }
 
@@ -374,17 +394,19 @@ internal sealed class TarEntryStream : Stream
 }
 
 /// <summary>TAR writer (over a compression wrapper stream). TAR requires known entry sizes.</summary>
-internal sealed class TarWriter : IArchiveWriter
+internal sealed class TarWriter : IArchiveWriter, IArchiveSymlinkWriter
 {
     private readonly Stream _inner;
+    private readonly Stream _sourceStream; // 用户/门面持有的底层流：不是我们的所有权
     private readonly TarStreamWriter _tar;
     private readonly ArchiveWriteOptions _options;
     private bool _finished;
 
-    public TarWriter(Stream compressed, ArchiveFormatInfo info, ArchiveWriteOptions options)
+    public TarWriter(Stream compressed, Stream sourceStream, ArchiveFormatInfo info, ArchiveWriteOptions options)
     {
         Info = info;
         _inner = compressed;
+        _sourceStream = sourceStream;
         _options = options;
         _tar = new TarStreamWriter(compressed, options.EntryNameEncoding);
     }
@@ -396,7 +418,8 @@ internal sealed class TarWriter : IArchiveWriter
     public void AddDirectoryEntry(string entryName, ArchiveEntryMetadata metadata)
     {
         var name = Normalize(entryName).TrimEnd('/');
-        _tar.PutNextEntry(name + "/", 0, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime, 493, isDirectory: true); // 0755
+        _tar.PutNextEntry(name + "/", 0, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
+            (int)((metadata.UnixMode ?? 493) & 0x0FFF), isDirectory: true); // 0755 默认
         _tar.CloseEntry();
     }
 
@@ -410,7 +433,8 @@ internal sealed class TarWriter : IArchiveWriter
         var size = metadata.Size >= 0 ? metadata.Size : content.Length;
         var name = Normalize(entryName);
 
-        _tar.PutNextEntry(name, size, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime, 420, isDirectory: false); // 0644
+        _tar.PutNextEntry(name, size, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
+            (int)((metadata.UnixMode ?? 420) & 0x0FFF), isDirectory: false); // 0644 默认
 
         var buffer = new byte[81920];
         long remaining = size;
@@ -427,6 +451,18 @@ internal sealed class TarWriter : IArchiveWriter
             throw new IOException($"Source stream ran out of data: {entryName} declared {size} bytes but fewer were available");
         }
 
+        _tar.CloseEntry();
+    }
+
+    /// <summary>写入符号链接条目（ustar typeflag '2' + linkname）。</summary>
+    public void AddSymlink(string entryName, string target, ArchiveEntryMetadata metadata)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (target == null) throw new ArgumentNullException(nameof(target));
+
+        var name = Normalize(entryName);
+        _tar.PutNextEntry(name, 0, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
+            (int)((metadata.UnixMode ?? 0xA1FF) & 0x0FFF), isDirectory: false, linkName: target);
         _tar.CloseEntry();
     }
 
@@ -464,7 +500,11 @@ internal sealed class TarWriter : IArchiveWriter
             try { Finish(CancellationToken.None); } catch { /* do not mask the original exception */ }
         }
 
-        _inner.Dispose();
+        // 只处置我们创建的压缩包装；plain TAR 时 _inner 即源流本身，不归本对象关闭
+        if (!ReferenceEquals(_inner, _sourceStream))
+        {
+            _inner.Dispose();
+        }
     }
 }
 

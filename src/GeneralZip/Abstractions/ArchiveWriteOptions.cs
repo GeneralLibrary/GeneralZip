@@ -13,11 +13,40 @@ public enum CompressionLevelChoice
     SmallestSize = 3,
 }
 
+/// <summary>
+/// ZIP 条目压缩方法（仅 ZIP 格式使用；其它格式忽略）。
+/// Auto = 空条目/NoCompression 用 Store，其余 Deflate。
+/// BZip2/Zstd/Lzma 需要 Rust 原生核心（缺失时抛 NativeCoreMissingException）。
+/// </summary>
+public enum ZipCompressionMethodChoice
+{
+    Auto = 0,
+    Deflate = 1,
+    BZip2 = 2,
+    Zstd = 3,
+    Lzma = 4,
+}
+
 /// <summary>创建归档的选项。</summary>
 public sealed class ArchiveWriteOptions
 {
     /// <summary>压缩级别。默认 Optimal。</summary>
     public CompressionLevelChoice Level { get; set; } = CompressionLevelChoice.Optimal;
+
+    /// <summary>ZIP 条目压缩方法（其它格式忽略）。默认 Auto（Deflate）。</summary>
+    public ZipCompressionMethodChoice ZipCompressionMethod { get; set; } = ZipCompressionMethodChoice.Auto;
+
+    /// <summary>
+    /// 并行压缩的最大并发度（当前仅 ZIP 实现条目级分片并行：各条目压缩至独立临时分片，
+    /// Finish 时按序装配）。默认 1（顺序压缩）；大于 1 的事件不保证条目顺序。
+    /// </summary>
+    public int MaxDegreeOfParallelism { get; set; } = 1;
+
+    /// <summary>
+    /// 分卷大小（字节）。大于 0 时输出为 x.zip.001/002/... 纯字节分卷（EOCD 落在末卷）；
+    /// 读取端打开 x.zip.001 即自动拼接。默认 0 = 单文件。仅 ZIP 等顺序写入格式适用。
+    /// </summary>
+    public long VolumeSize { get; set; }
 
     /// <summary>加密算法标识（注册表中的 AlgorithmId）；null 表示不加密。</summary>
     public string? EncryptionAlgorithm { get; set; }
@@ -27,6 +56,17 @@ public sealed class ArchiveWriteOptions
 
     /// <summary>KDF 迭代次数（国密 SM4-GM 等支持自定义 KDF 的算法）。默认 10000。</summary>
     public int KdfIterations { get; set; } = 10_000;
+
+    /// <summary>
+    /// KDF 算法标识（注册表 <see cref="GeneralZipEncryptionRegistry.Kdfs"/> 中的 KdfId，
+    /// 如 "SM3-PBKDF2"（默认）/ "PBKDF2-SHA256"）；null = 算法默认值。
+    /// </summary>
+    public string? KdfAlgorithmId { get; set; }
+
+    /// <summary>
+    /// 接收方 SM2 公钥（hex；"04||X||Y" 130 字符或 "X||Y" 128 字符）。SM2-GM 信封加密写路径必填。
+    /// </summary>
+    public string? RecipientPublicKey { get; set; }
 
     /// <summary>
     /// 直接注入加密提供者（优先于 <see cref="EncryptionAlgorithm"/> 查找注册表）。
@@ -54,9 +94,14 @@ public sealed class ArchiveWriteOptions
     internal ArchiveWriteOptions CloneForFormat() => new()
     {
         Level = Level,
+        ZipCompressionMethod = ZipCompressionMethod,
+        MaxDegreeOfParallelism = MaxDegreeOfParallelism,
+        VolumeSize = VolumeSize,
         EncryptionAlgorithm = EncryptionAlgorithm,
         Password = Password,
         KdfIterations = KdfIterations,
+        KdfAlgorithmId = KdfAlgorithmId,
+        RecipientPublicKey = RecipientPublicKey,
         EntryNameEncoding = EntryNameEncoding,
         ArchiveComment = ArchiveComment,
         DefaultLastWriteTime = DefaultLastWriteTime,
@@ -87,11 +132,29 @@ public sealed class ArchiveWriteOptions
             throw new NotSupportedException($"Encryption algorithm {provider.AlgorithmId} does not support writing");
         }
 
-        if (Password == null)
+        // 写路径无需口令的算法（如 SM2-GM 信封，用接收方公钥加密数据密钥）
+        if (Password == null && provider is not IPasswordlessWriteProvider)
         {
             throw new ArgumentException($"Algorithm {provider.AlgorithmId} requires a password (options.Password)", nameof(Password));
         }
 
         return provider;
+    }
+
+    /// <summary>解析 KDF 提供者（KdfAlgorithmId → 注册表查找；未设置返回 null = 算法默认）。</summary>
+    internal IKdfProvider? ResolveKdf(GeneralZipEncryptionRegistry registry)
+    {
+        if (KdfAlgorithmId == null)
+        {
+            return null;
+        }
+
+        var kdf = registry.Kdfs.FindByName(KdfAlgorithmId);
+        if (kdf == null)
+        {
+            throw new UnsupportedFormatException($"Unregistered KDF algorithm: {KdfAlgorithmId}");
+        }
+
+        return kdf;
     }
 }

@@ -16,6 +16,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <!-- net8.0 声明 AOT 兼容：编译期验证无反射/动态代码使用 -->
+    <IsAotCompatible Condition="'$(TargetFramework)' == 'net8.0'">true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,7 +35,14 @@
           Pack="true"
           PackagePath="runtimes"
           Visible="false"
-          Condition="Exists('runtimes\win-x64\native\generalzip_native.dll')" />
+          Condition="Exists('runtimes\win-x64\native\generalzip_native.dll')
+                    Or Exists('runtimes\linux-x64\native\libgeneralzip_native.so')
+                    Or Exists('runtimes\linux-musl-x64\native\libgeneralzip_native.so')
+                    Or Exists('runtimes\linux-arm64\native\libgeneralzip_native.so')
+                    Or Exists('runtimes\osx-x64\native\libgeneralzip_native.dylib')
+                    Or Exists('runtimes\osx-arm64\native\libgeneralzip_native.dylib')
+                    Or Exists('runtimes\win-arm64\native\generalzip_native.dll')
+                    Or Exists('runtimes\win-x86\native\generalzip_native.dll')" />
   </ItemGroup>
 
   <ItemGroup>

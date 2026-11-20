@@ -92,3 +92,18 @@ dotnet run -c Release --project samples/GeneralZip.Fixtures
 
 生成器确定性：明文内容固定（文本 + 固定种子 LCG 二进制），
 但加密归档本身含随机盐/IV，每次生成的归档字节不同——以明文 SHA-256 为准。
+
+## 互操作锚点（`interop/` 子目录）
+
+以下归档由**独立实现**生成（py7zr、pycdlib、python zipfile、手写 GNU cpio newc），
+GeneralZip 仅作为读取方 —— 这是跨实现兼容性的回归锚点，加密样例口令同上。
+
+| 文件 | 生成方 | 说明 |
+|---|---|---|
+| `py7zr-sample.7z` | py7zr | 7z LZMA2，2 条目 |
+| `py7zr-secret.7z` | py7zr | 7z AES-256 加密（演示口令） |
+| `pycdlib-sample.iso` | pycdlib | ISO9660 + Joliet，含子目录 |
+| `python-zip64.zip` | python zipfile | force_zip64 头部（sparse.bin 条目携带 Zip64 字段） |
+| `gnu-cpio-newc.cpio` | 手写 newc | 含 S_IFLNK 符号链接条目 |
+
+由 `tests/GeneralZip.Tests/InteropFixtureTests.cs` 逐一校验。

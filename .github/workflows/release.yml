@@ -49,6 +49,22 @@ jobs:
             toolchain: stable
             target: x86_64-unknown-linux-musl
             use-dlltool-shim: false
+          - rid: linux-arm64
+            os: ubuntu-latest
+            toolchain: stable
+            target: aarch64-unknown-linux-gnu
+            use-dlltool-shim: false
+            cross: gcc-aarch64-linux-gnu
+          - rid: win-arm64
+            os: windows-latest
+            toolchain: stable-x86_64-pc-windows-gnu
+            target: aarch64-pc-windows-gnullvm
+            use-dlltool-shim: true
+          - rid: win-x86
+            os: windows-latest
+            toolchain: stable-x86_64-pc-windows-gnu
+            target: i686-pc-windows-gnu
+            use-dlltool-shim: true
           - rid: osx-x64
             os: macos-latest
             toolchain: stable
@@ -62,6 +78,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install cross toolchain
+        if: matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.cross }}
+
+      - name: Configure ARM64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -128,7 +152,7 @@ jobs:
       - name: Deploy cores into runtimes/<RID>/native
         shell: pwsh
         run: |
-          $rids = @('win-x64','linux-x64','linux-musl-x64','osx-x64','osx-arm64')
+          $rids = @('win-x64','linux-x64','linux-musl-x64','linux-arm64','win-arm64','win-x86','osx-x64','osx-arm64')
           foreach ($rid in $rids) {
             $dest = "src/GeneralZip/runtimes/$rid/native"
             New-Item -ItemType Directory -Force -Path $dest | Out-Null
@@ -146,6 +170,7 @@ jobs:
         run: |
           dotnet build GeneralZip.slnx -c Release -p:Version=${{ env.PACKAGE_VERSION }} --nologo
           dotnet pack src/GeneralZip/GeneralZip.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
+          dotnet pack src/GeneralZip.Cli/GeneralZip.Cli.csproj -c Release -p:Version=${{ env.PACKAGE_VERSION }} -o artifacts/nuget --nologo
 
       - name: Smoke test (fresh console app installs packed packages)
         shell: pwsh

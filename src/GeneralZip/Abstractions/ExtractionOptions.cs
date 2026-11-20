@@ -81,4 +81,29 @@ public sealed class ExtractionOptions
 
     /// <summary>单条目复制缓冲区大小（字节）。默认 81920。</summary>
     public int BufferSize { get; set; } = 81920;
+
+    /// <summary>
+    /// 是否应用 Unix 权限位（<see cref="IUnixEntry.UnixMode"/>；仅 Unix 平台生效，Windows 忽略）。
+    /// 默认 false。
+    /// </summary>
+    public bool PreserveUnixAttributes { get; set; }
+
+    /// <summary>符号链接条目处理策略。默认 <see cref="SymlinkPolicy.Skip"/>。</summary>
+    public SymlinkPolicy SymlinkPolicy { get; set; } = SymlinkPolicy.Skip;
+
+    /// <summary>
+    /// 并行解压的最大并发度。默认 1（顺序解压，事件按条目顺序触发）。
+    /// 大于 1 时按条目分片并行（要求归档以文件路径打开；条目顺序性事件不再保证顺序；
+    /// 交互式口令协商不可用——须预置 <see cref="ArchiveOpenOptions.Password"/>）。
+    /// </summary>
+    public int MaxDegreeOfParallelism { get; set; } = 1;
+
+    /// <summary>
+    /// Glob 包含模式（如 "photos/**/*.jpg"、"*.txt"）。非空时仅解压匹配任一模式的条目。
+    /// 与 <see cref="Filter"/> 并存：两者都需满足（AND 语义）。
+    /// </summary>
+    public IReadOnlyList<string>? IncludePatterns { get; set; }
+
+    /// <summary>Glob 排除模式（如 "**/*.tmp"）；命中任一模式的条目被跳过（优先于包含模式判断）。</summary>
+    public IReadOnlyList<string>? ExcludePatterns { get; set; }
 }

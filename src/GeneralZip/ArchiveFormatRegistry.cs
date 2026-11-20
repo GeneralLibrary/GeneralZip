@@ -27,6 +27,10 @@ public sealed class GeneralZipFormatRegistry
             Register(new Formats.Codecs.XzFormat());
             Register(new Formats.Codecs.ZstdFormat());
             Register(new Formats.Codecs.Lz4Format());
+            Register(new Formats.Codecs.BrotliFormat());
+            Register(new Formats.Cpio.CpioFormat());
+            Register(new Formats.Iso.IsoFormat());
+            Register(new Formats.Cab.CabFormat());
         }
     }
 

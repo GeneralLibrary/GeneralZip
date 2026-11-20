@@ -42,8 +42,11 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         var salt = Kdf.RandomBytes(SaltLength);
         var iv = Kdf.RandomBytes(IvLength);
 
+        // KDF：context.Kdf（options.KdfAlgorithmId 解析结果）优先，缺省 SM3-PBKDF2
+        var kdf = context.Kdf ?? new Pbkdf2Sm3KdfProvider();
+
         // 先派生密钥：校验值（K_ver）必须进入 extra field，而 extra field 又是 HMAC 的 AAD
-        var keyMaterial = Kdf.Pbkdf2Sm3(context.Password, salt, iterations, KeyLength + MacKeyLength + VerifierLength);
+        var keyMaterial = kdf.Derive(context.Password!, salt, iterations, KeyLength + MacKeyLength + VerifierLength);
         var keyEnc = new byte[KeyLength];
         var keyMac = new byte[MacKeyLength];
         var verifier = new byte[VerifierLength];
@@ -53,7 +56,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         Kdf.Zero(keyMaterial);
 
         // extra field 数据区（HMAC 的 AAD），布局见 CRYPTO-SPEC.md §5
-        var aad = BuildExtraFieldData(iterations, salt, iv, verifier, context.RealCompressionMethod);
+        var aad = BuildExtraFieldData(iterations, salt, iv, verifier, context.RealCompressionMethod, kdf.SpecId);
 
         return new EntryEncryptionPlan(
             ExtraFieldId,
@@ -82,8 +85,12 @@ public sealed class Sm4GmProvider : IEncryptionProvider
 
         var payloadLength = context.CipherDataSize - MacLength;
 
+        // 按 extra field 中的 KdfId 解析 KDF 提供者（默认注册表内置 SM3-PBKDF2 / PBKDF2-SHA256）
+        var kdf = GeneralZipEncryptionRegistry.Default.Kdfs.Find(parsed.KdfId)
+                  ?? throw new UnsupportedFormatException($"Unsupported SM4-GM KDF id {parsed.KdfId}", context.EntryName);
+
         // 口令快速失败：先派生 K_ver 与存储校验值比较
-        var keyMaterial = Kdf.Pbkdf2Sm3(context.Password, parsed.Salt, parsed.Iterations, KeyLength + MacKeyLength + VerifierLength);
+        var keyMaterial = kdf.Derive(context.Password!, parsed.Salt, parsed.Iterations, KeyLength + MacKeyLength + VerifierLength);
         var keyEnc = new byte[KeyLength];
         var keyMac = new byte[MacKeyLength];
         var verifier = new byte[VerifierLength];
@@ -107,7 +114,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
     /// <summary>
     /// 构建 extra field 数据区。
     /// </summary>
-    private static byte[] BuildExtraFieldData(int iterations, byte[] salt, byte[] iv, byte[] verifier, ushort realMethod)
+    private static byte[] BuildExtraFieldData(int iterations, byte[] salt, byte[] iv, byte[] verifier, ushort realMethod, byte kdfSpecId)
     {
         // Magic(4) Ver(1) Mode(1) Kdf(1) Iter(4) SaltLen(1) Salt IvLen(1) IV VerifierLen(1)→4 直接内嵌 Verifier(4) RealMethod(2)
         var data = new byte[4 + 1 + 1 + 1 + 4 + 1 + SaltLength + 1 + IvLength + 4 + 2];
@@ -119,7 +126,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         data[pos++] = (byte)'M';
         data[pos++] = SpecVersion;
         data[pos++] = CipherModeCtr;
-        data[pos++] = KdfIdPbkdf2Sm3;
+        data[pos++] = kdfSpecId;
         PutLe32(data, ref pos, iterations);
         data[pos++] = SaltLength;
         Buffer.BlockCopy(salt, 0, data, pos, SaltLength);
@@ -160,10 +167,6 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         }
 
         var kdfId = data[6];
-        if (kdfId != KdfIdPbkdf2Sm3)
-        {
-            throw new UnsupportedFormatException($"Unsupported SM4-GM KDF id {kdfId}", entryName);
-        }
 
         var pos = 7;
         var iterations = GetLe32(data, ref pos);
@@ -192,7 +195,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
         pos += VerifierLength;
 
         var realMethod = (ushort)(data[pos] | (data[pos + 1] << 8));
-        return new ParsedExtra(iterations, salt, iv, verifier, realMethod);
+        return new ParsedExtra(kdfId, iterations, salt, iv, verifier, realMethod);
     }
 
     private static void PutLe32(byte[] buffer, ref int pos, int value)
@@ -212,8 +215,9 @@ public sealed class Sm4GmProvider : IEncryptionProvider
 
     private readonly struct ParsedExtra
     {
-        public ParsedExtra(int iterations, byte[] salt, byte[] iv, byte[] verifier, ushort realMethod)
+        public ParsedExtra(byte kdfId, int iterations, byte[] salt, byte[] iv, byte[] verifier, ushort realMethod)
         {
+            KdfId = kdfId;
             Iterations = iterations;
             Salt = salt;
             Iv = iv;
@@ -221,6 +225,7 @@ public sealed class Sm4GmProvider : IEncryptionProvider
             RealMethod = realMethod;
         }
 
+        public byte KdfId { get; }
         public int Iterations { get; }
         public byte[] Salt { get; }
         public byte[] Iv { get; }

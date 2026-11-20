@@ -371,3 +371,18 @@ ArchiveException (基类)
 
 - 组件语义化版本；`ArchiveFormatRegistry.Default` 冻结内置提供者集合，仅追加不破坏。
 - SM4-GM 规范版本化（extra field 内 1 字节 version），向后兼容旧包读取。
+
+## 13. v2.0 能力扩展总览
+
+本节汇总 2.0 版新增子系统（详细设计散见各模块注释与 CRYPTO-SPEC §10）：
+
+| 子系统 | 要点 |
+|---|---|
+| 门面高阶操作 | Append / Remove / Convert（读出→重写语义，加密算法自动继承）；Stream→Stream 一行式 |
+| 压缩方法扩展 | ZIP 条目方法 12/93/14（BZip2/Zstd/LZMA），Rust 核心流式编解码（回调 FFI，零临时文件）；.zst/.br 单文件同步去临时文件化 |
+| 并行 | 解压按条目分片（每工作实例独立重开归档，事件加锁转发）；ZIP 写入分片并行（明文暂存 + 后台压缩 + Finish 装配），并发度经 ArchiveWriteOptions/ExtractionOptions.MaxDegreeOfParallelism |
+| 加密 | SM2-GM 信封（CRYPTO-SPEC §10，0x4D54）；IKdfProvider 可插拔（KdfId 1/2 内置） |
+| 格式 | CPIO（newc/odc/binary 读、newc 写）、ISO9660（+Joliet/Rock Ridge 读）、CAB（NONE 存储读）、Brotli 单文件；ZIP 分卷（.001/.002 纯字节分卷，VolumeSize 选项） |
+| 条目属性 | IUnixEntry（ZIP Unix host / ustar mode）；IArchiveSymlinkWriter（ZIP S_IFLNK、TAR typeflag 2）；SymlinkPolicy + PreserveUnixAttributes 提取策略 |
+| 异步 | IAsyncEnumerable 条目枚举（EnumerateEntriesAsync）；异步入口同步语义显式文档化 |
+| 工程 | GeneralZip.Cli（dotnet tool，gz 命令）；fuzz/ 读路径 fuzz 工程 + RobustnessTests 回归；release 矩阵 8 RID（含 linux-arm64/win-arm64/win-x86）；库 net8.0 IsAotCompatible 静态校验 |

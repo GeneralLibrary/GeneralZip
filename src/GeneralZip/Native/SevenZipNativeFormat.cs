@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Threading;
 using GeneralZip;
@@ -272,7 +273,9 @@ internal sealed class SevenZipNativeWriter : IArchiveWriter
 
         // 原生核心按路径产出归档；为避免与门面持有的输出流争锁，先写临时文件再回拷
         var produced = Path.Combine(_stagingDir, "produced.7z");
-        var sourcesJson = System.Text.Json.JsonSerializer.Serialize(_sources);
+        // 手工构造 JSON 字符串数组（避免 JsonSerializer 反射 → AOT/Trim 兼容）
+        var parts = _sources.Select(s0 => System.Text.Json.JsonEncodedText.Encode(s0).ToString());
+        var sourcesJson = "[" + string.Join(",", parts.Select(p0 => '"' + p0 + '"')) + "]";
         var password = GzpNative.PasswordBytes(_options.Password);
 
         var status = GzpNative.gzp_7z_compress(sourcesJson, produced, password,

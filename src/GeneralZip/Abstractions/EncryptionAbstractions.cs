@@ -8,24 +8,29 @@ namespace GeneralZip.Abstractions;
 public sealed class EncryptionWriteContext
 {
     public EncryptionWriteContext(
-        string password,
+        string? password,
         string entryName,
         uint? crc32,
         long? plainSize,
         ushort realCompressionMethod = 0,
         uint dosTime = 0,
-        int kdfIterations = 0)
+        int kdfIterations = 0,
+        IKdfProvider? kdf = null,
+        byte[]? recipientPublicKey = null)
     {
-        Password = password ?? throw new ArgumentNullException(nameof(password));
+        Password = password;
         EntryName = entryName;
         Crc32 = crc32;
         PlainSize = plainSize;
         RealCompressionMethod = realCompressionMethod;
         DosTime = dosTime;
         KdfIterations = kdfIterations;
+        Kdf = kdf;
+        RecipientPublicKey = recipientPublicKey;
     }
 
-    public string Password { get; }
+    /// <summary>口令。写路径无需口令的算法（IPasswordlessWriteProvider，如 SM2-GM 信封）为 null。</summary>
+    public string? Password { get; }
 
     public string EntryName { get; }
 
@@ -43,6 +48,12 @@ public sealed class EncryptionWriteContext
 
     /// <summary>KDF 迭代次数（0 = 算法默认值）。</summary>
     public int KdfIterations { get; }
+
+    /// <summary>KDF 提供者（options.KdfAlgorithmId 解析结果；null = 算法默认 KDF）。</summary>
+    public IKdfProvider? Kdf { get; }
+
+    /// <summary>接收方公钥（信封算法如 SM2-GM 需要；UTF-8 解码前为原始字节）。</summary>
+    public byte[]? RecipientPublicKey { get; }
 }
 
 /// <summary>读取侧加密上下文：条目密文与该算法在写入时登记的参数。</summary>

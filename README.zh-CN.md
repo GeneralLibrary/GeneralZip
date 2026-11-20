@@ -19,10 +19,10 @@
 
 ## 为什么选择 GeneralZip？
 
-- **一套 API 覆盖多种格式** —— ZIP、7z、RAR、TAR、GZ、BZ2、XZ、Zstd、LZ4，魔数自动探测。再也不用为某个文件找专门的库。
-- **正确的加密** —— WinZip AES 通用互通；**SM4-GM 国密**以文档化的自定义 ZIP 扩展实现；所有算法通过一个 `EncryptionAlgorithm` 开关切换。
-- **为应用而生** —— 完整事件系统（进度、交互取密、覆盖决策、错误策略）、全 API `CancellationToken`、`IProgress<T>` 支持。
-- **核心包零第三方 NuGet 依赖** —— 密码学原语（SM3/SM4）与 TAR 容器为纯 C# 实现，经 GB/T 标准向量锁定；原生编解码（7z/bzip2/xz/zstd/lz4）位于可选的 Rust 原生核心，全部纯 Rust。
+- **一套 API 覆盖多种格式** —— ZIP、7z、RAR、TAR、GZ、BZ2、XZ、Zstd、LZ4、Brotli、CPIO（读写），ISO9660 与 CAB（只读），魔数自动探测。再也不用为某个文件找专门的库。
+- **正确的加密** —— WinZip AES 通用互通；**SM4-GM 国密**以文档化的自定义 ZIP 扩展实现；**SM2-GM 国密信封**（数据密钥经 SM2 公钥封装，公钥分发、无共享口令）；KDF 注册表可插拔；所有算法通过一个 `EncryptionAlgorithm` 开关切换。
+- **为应用而生** —— 完整事件系统（进度、交互取密、覆盖决策、错误策略）、全 API `CancellationToken`、`IProgress<T>` 支持、并行压缩/解压、`IAsyncEnumerable` 条目枚举、glob 过滤。
+- **核心包零第三方 NuGet 依赖** —— 密码学原语（SM3/SM4/SM2）与 TAR/CPIO 容器为纯 C# 实现，经 GB/T 标准向量锁定；原生编解码（7z/bzip2/xz/zstd/lz4/brotli）位于可选的 Rust 原生核心，全部纯 Rust，回调式流式转码零临时文件。
 
 ## 安装
 
@@ -138,15 +138,19 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 
 | 格式 | 读 | 写 | 加密读 | 加密写 |
 |---|:---:|:---:|:---:|:---:|
-| ZIP（Store/Deflate/Zip64） | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** | ✓ |
+| ZIP（Store/Deflate/**BZip2/Zstd/LZMA**/Zip64） | ✓ | ✓ | ZipCrypto / WinZip AES / **SM4-GM** / **SM2-GM** | ✓ |
 | 7z（LZMA2） | ✓ | ✓ | AES-256 | AES-256 |
 | RAR4/RAR5 | ✓ | —（专有） | ✓ 密码 | — |
 | TAR / TAR.GZ | ✓ | ✓ | — | — |
 | GZ | ✓（.NET 内置） | ✓（.NET 内置） | — | — |
-| BZ2 / XZ / ZSTD / LZ4 | ✓（原生核心） | ✓（原生核心） | — | — |
+| BZ2 / XZ / ZSTD / LZ4 / BROTLI | ✓（原生核心） | ✓（原生核心） | — | — |
+| CPIO（newc/odc/binary） | ✓ | ✓（newc） | — | — |
+| ISO9660（+Joliet/Rock Ridge） | ✓ | —（只读） | — | — |
+| CAB | ✓（NONE 存储） | —（只读） | — | — |
 
-> 7z/RAR 与 BZ2/XZ/ZSTD/LZ4 由 **Rust 原生核心**提供（全部纯 Rust crate）。
-> 核心缺失时优雅降级：ZIP/TAR/TAR.GZ/GZ（纯托管）与全部 ZIP 系加密不受影响。
+> 7z/RAR 与 BZ2/XZ/ZSTD/LZ4/BROTLI 由 **Rust 原生核心**提供（全部纯 Rust crate），
+> 经回调式 FFI 流式转码，零临时文件。核心缺失时优雅降级：ZIP/TAR/CPIO/GZ（纯托管）
+> 与全部 ZIP 系加密不受影响。ZIP 条目可选用 BZip2/Zstd/LZMA 压缩方法（与 7-Zip/Info-ZIP 互通）。
 
 **部分 "—" 的原因：**
 
@@ -155,9 +159,9 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
   读取（含密码解密）由原生核心完整支持。
 - **TAR / GZ / BZ2 / XZ / ZSTD / LZ4 的加密列** —— 这些格式的规范中根本不存在加密机制：
   TAR 是纯"头 + 数据"容器，单文件编解码器也没有存放 KDF 参数、IV 或认证标签的位置。
-  需要加密时可在应用层"先加密后压缩"，或改用 ZIP + WinZip AES / SM4-GM。
+  需要加密时可在应用层"先加密后压缩"，或改用 ZIP + WinZip AES / SM4-GM / SM2-GM。
 - **SM4-GM 仅落地于 ZIP 是刻意设计** —— ZIP 的 extra field 机制天生支持第三方扩展，
-  SM4-GM 容器的二进制规范已在 [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) 完整文档化，
+  SM4-GM 与 SM2-GM 信封容器的二进制规范已在 [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) 完整文档化，
   供第三方实现互通；向 7z 这类标准化容器注入自定义加密会产出其他工具无法打开的归档。
 - **ZipCrypto 写入默认关闭**（遗留 56 位弱加密），需显式启用；
   正式场景请选择 WinZip AES（通用互通）或 SM4-GM（国密合规）。
@@ -205,6 +209,7 @@ GeneralZip.Encryption.Register(new MyEncryptionProvider());
 | [docs/CRYPTO-SPEC.md](docs/CRYPTO-SPEC.md) | SM4-GM 加密 ZIP 容器二进制规范（第三方互通依据） |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | 全格式性能数据 |
 | [samples/](samples/) | 可运行示例：基础用法、事件、基准、fixture 生成器 |
+| [fuzz/](fuzz/) | 读路径 fuzzing 工程（SharpFuzz）+ CI 健壮性回归 |
 
 ## 项目结构
 
