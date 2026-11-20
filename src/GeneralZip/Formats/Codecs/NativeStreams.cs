@@ -16,32 +16,20 @@ internal sealed class NativeTempDecodeStream : Stream
     private FileStream? _result;
     private bool _disposed;
 
+    /// <remarks>不拥有源流：TarReader 会基于同一源流二次重建解码流，Zip 条目路径的
+    /// 源流由 ZipReader 统一管理（与 DeflateStream 的 leaveOpen 约定一致）。</remarks>
     public NativeTempDecodeStream(Stream source, string codec, CancellationToken cancellationToken = default)
     {
         _tempDirectory = new PrivateTempDirectory("gzp-decode");
         _tempPath = _tempDirectory.FilePath("decoded.out");
         try
         {
-            try
+            using (var output = File.Create(_tempPath, 65536))
             {
-                using (var output = File.Create(_tempPath, 65536))
-                {
-                    NativeCodecRouter.DecompressStream(source, output, codec, cancellationToken);
-                }
-
-                var buffer = new byte[81920];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                }
-
-                _result = new FileStream(_tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
+                NativeCodecRouter.DecompressStream(source, output, codec, cancellationToken);
             }
-            finally
-            {
-                source.Dispose();
-            }
+
+            _result = new FileStream(_tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         }
         catch
         {

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using GeneralZip;
@@ -108,7 +109,9 @@ internal static class NativeCodecRouter
 
             if (context.Error != null)
             {
-                throw context.Error; // C# 侧异常（含 OperationCanceledException）优先透传
+                // 回调里捕获的异常（含 OperationCanceledException）优先透传；
+                // 经 EDI 重抛以保留回调内的原始堆栈（裸 throw ex 会重置堆栈）
+                ExceptionDispatchInfo.Capture(context.Error).Throw();
             }
 
             if (status != global::GeneralZip.Native.GzpNative.GzpOk)
