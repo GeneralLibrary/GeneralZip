@@ -168,9 +168,14 @@ public sealed class IsoFormat : IArchiveFormat
 
         private void Walk(Stream s, long dirLba, long dirSize, string prefix, bool ucs2, HashSet<long> visited, int depth)
         {
-            if (depth > 8 || !visited.Add(dirLba))
+            if (depth > 1024)
             {
-                return; // 防御：目录环/过深
+                throw new ArchiveCorruptedException("ISO9660 directory nesting exceeds the supported limit");
+            }
+
+            if (!visited.Add(dirLba))
+            {
+                return;
             }
 
             var extentStart = dirLba * SectorSize;
@@ -186,17 +191,34 @@ public sealed class IsoFormat : IArchiveFormat
                         break;
                     }
 
+                    if (len < 34 || offset + len > sector.Length)
+                    {
+                        throw new ArchiveCorruptedException("ISO9660: invalid directory record length");
+                    }
+
+                    var nameLen = sector[offset + 32];
+                    if (33 + nameLen > len)
+                    {
+                        throw new ArchiveCorruptedException("ISO9660: directory identifier exceeds its record");
+                    }
+
                     var extLba = BitConverter.ToUInt32(sector, offset + 2);
                     var extSize = BitConverter.ToUInt32(sector, offset + 10);
                     var flags = sector[offset + 25];
-                    var nameLen = sector[offset + 32];
                     var isDir = (flags & 0x02) != 0;
 
-                    var name = DecodeName(sector, offset + 33, nameLen, ucs2);
-                    var systemUse = offset + 33 + nameLen + (nameLen & 1);
+                    var identifierOffset = offset + 33;
+                    if (nameLen == 1 && sector[identifierOffset] <= 1)
+                    {
+                        offset += len;
+                        continue;
+                    }
+
+                    var name = DecodeName(sector, identifierOffset, nameLen, ucs2);
+                    var systemUse = identifierOffset + nameLen + ((nameLen & 1) == 0 ? 1 : 0);
                     name = ApplyRockRidge(sector, systemUse, offset + len, name);
 
-                    if (name is not ("." or ".."))
+                    if (name.Length != 0)
                     {
                         var mtime = DecodeIsoTime(sector, offset + 18);
                         var fullName = prefix.Length > 0 ? prefix + "/" + name : name;
@@ -232,7 +254,9 @@ public sealed class IsoFormat : IArchiveFormat
                 }
 
                 var name = sb.ToString();
-                return name.Length > 0 && name[name.Length - 1] == '.' ? name.Substring(0, name.Length - 1) : name; // Joliet 目录名尾 "."
+                var version = name.IndexOf(';');
+                if (version >= 0) name = name.Substring(0, version);
+                return name.Length > 0 && name[name.Length - 1] == '.' ? name.Substring(0, name.Length - 1) : name;
             }
 
             var raw = Encoding.ASCII.GetString(sector, offset, nameLen);

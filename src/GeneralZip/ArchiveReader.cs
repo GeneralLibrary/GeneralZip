@@ -294,9 +294,14 @@ public sealed class GeneralZipReader : IDisposable
 
         var relay = new EntryProgressRelay(this, entry, progress);
         var dummy = 0;
-        var outcome = ExtractOne(entry, destinationFilePath, options, cancellationToken, relay, progress, result, new List<FailedEntry>(), testOnly, ref dummy);
+        var failures = new List<FailedEntry>();
+        var rootDirectory = testOnly
+            ? string.Empty
+            : Path.GetDirectoryName(Path.GetFullPath(destinationFilePath)) ?? Path.GetFullPath(".");
+        var outcome = ExtractOne(entry, destinationFilePath, rootDirectory, options, cancellationToken, relay, progress, result, failures, testOnly, ref dummy);
         progress.Finalize(entry.Size >= 0 ? entry.Size : relay.BytesProcessed);
         if (outcome == Outcome.Abort) result.Aborted = true;
+        result.Failures = failures;
         return result;
     }
 
@@ -354,6 +359,13 @@ public sealed class GeneralZipReader : IDisposable
                 continue;
             }
 
+            if (!testOnly && options.SymlinkPolicy == SymlinkPolicy.Skip && IsSymlink(entry))
+            {
+                result.SkippedCount++;
+                progress.CompleteEntry(Math.Max(0, entry.Size));
+                continue;
+            }
+
             if ((options.Filter != null && !options.Filter(entry))
                 || !GlobMatcher.Matches(entry.FullName, options.IncludePatterns, options.ExcludePatterns))
             {
@@ -381,7 +393,7 @@ public sealed class GeneralZipReader : IDisposable
 
             var relay = new EntryProgressRelay(this, entry, progress);
             var retryCount = 0;
-            var outcome = ExtractOne(entry, targetPath, options, cancellationToken, relay, progress, result, failures, testOnly, ref retryCount);
+            var outcome = ExtractOne(entry, targetPath, destinationDirectory ?? string.Empty, options, cancellationToken, relay, progress, result, failures, testOnly, ref retryCount);
             if (outcome == Outcome.Abort)
             {
                 result.Aborted = true;
@@ -416,9 +428,10 @@ public sealed class GeneralZipReader : IDisposable
         }
 
         // 目录条目顺序创建（避免并发建目录竞态）；文件条目按索引分片并行
-        var fileEntries = new List<IArchiveEntry>();
-        foreach (var entry in _inner.Entries)
+        var fileEntries = new List<(IArchiveEntry Entry, int Index)>();
+        for (var entryIndex = 0; entryIndex < _inner.Entries.Count; entryIndex++)
         {
+            var entry = _inner.Entries[entryIndex];
             if (entry.IsDirectory)
             {
                 if (!testOnly)
@@ -430,6 +443,12 @@ public sealed class GeneralZipReader : IDisposable
                 continue;
             }
 
+            if (!testOnly && options.SymlinkPolicy == SymlinkPolicy.Skip && IsSymlink(entry))
+            {
+                result.SkippedCount++;
+                continue;
+            }
+
             if ((options.Filter != null && !options.Filter(entry))
                 || !GlobMatcher.Matches(entry.FullName, options.IncludePatterns, options.ExcludePatterns))
             {
@@ -437,7 +456,7 @@ public sealed class GeneralZipReader : IDisposable
                 continue;
             }
 
-            fileEntries.Add(entry);
+            fileEntries.Add((entry, entryIndex));
         }
 
         if (fileEntries.Count == 0)
@@ -473,11 +492,14 @@ public sealed class GeneralZipReader : IDisposable
                 long skipped = 0;
                 for (var i = lo; i < hi; i++)
                 {
-                    var entry = fileEntries[i];
+                    var item = fileEntries[i];
+                    var entry = worker.Entries[item.Index];
                     if (testOnly)
                     {
                         var testResult = worker.TestEntry(entry, options, cancellationToken);
                         processed += testResult.ProcessedCount;
+                        if (testResult.Failures != null) localFailures.AddRange(testResult.Failures);
+                        if (testResult.Aborted) result.Aborted = true;
                         continue;
                     }
 
@@ -493,6 +515,8 @@ public sealed class GeneralZipReader : IDisposable
                     var workerResult = worker.ExtractEntry(entry, targetPath, options, cancellationToken);
                     processed += workerResult.ProcessedCount;
                     skipped += workerResult.SkippedCount;
+                    if (workerResult.Failures != null) localFailures.AddRange(workerResult.Failures);
+                    if (workerResult.Aborted) result.Aborted = true;
                 }
 
                 workerFailures[workerIndex] = localFailures;
@@ -576,6 +600,7 @@ public sealed class GeneralZipReader : IDisposable
     private Outcome ExtractOne(
         IArchiveEntry entry,
         string? targetPath,
+        string rootDirectory,
         ExtractionOptions options,
         CancellationToken cancellationToken,
         EntryProgressRelay relay,
@@ -612,6 +637,11 @@ public sealed class GeneralZipReader : IDisposable
                         finalPath = EntryPathResolver.NextAvailableName(finalPath, options.MaxRenameAttempts);
                     }
 
+                    if (EntryPathResolver.ContainsReparsePoint(rootDirectory, finalPath!))
+                    {
+                        throw new ArchiveException("Extraction path traverses a symbolic link or reparse point; extraction denied", entry.FullName);
+                    }
+
                     var dir = Path.GetDirectoryName(finalPath);
                     if (!string.IsNullOrEmpty(dir))
                     {
@@ -619,13 +649,16 @@ public sealed class GeneralZipReader : IDisposable
                     }
                 }
 
-                using (var source = _inner.OpenEntryStream(entry))
+                var entryStream = _inner is ICancellableEntryStreamProvider cancellable
+                    ? cancellable.OpenEntryStream(entry, cancellationToken)
+                    : _inner.OpenEntryStream(entry);
+                using (var source = entryStream)
                 {
                     if (testOnly)
                     {
                         Drain(source, options.BufferSize, relay, cancellationToken);
                     }
-                    else if (TryCreateSymlink(source, entry, finalPath!, options))
+                    else if (TryCreateSymlink(source, entry, finalPath!, rootDirectory, options))
                     {
                         // 符号链接条目：按策略创建链接（或降级为普通文件写入目标文本）
                     }
@@ -870,7 +903,7 @@ public sealed class GeneralZipReader : IDisposable
     /// 符号链接条目处理。返回 true 表示条目已按符号链接处理（无需常规复制）。
     /// 策略 Skip → 调用方按普通文件写入；策略 Preserve → 创建链接（失败降级为普通文件）。
     /// </summary>
-    private bool TryCreateSymlink(Stream source, IArchiveEntry entry, string targetPath, ExtractionOptions options)
+    private bool TryCreateSymlink(Stream source, IArchiveEntry entry, string targetPath, string rootDirectory, ExtractionOptions options)
     {
         var unix = entry as IUnixEntry;
         var mode = unix?.UnixMode;
@@ -882,8 +915,7 @@ public sealed class GeneralZipReader : IDisposable
 
         if (options.SymlinkPolicy != SymlinkPolicy.Preserve)
         {
-            // Skip 策略：不建链接——目标文本作为普通文件落盘（保留信息、无攻击面）
-            CopyToFile(source, targetPath, options.BufferSize, relay: null, default);
+            Drain(source, options.BufferSize, relay: null, default);
             return true;
         }
 
@@ -902,6 +934,11 @@ public sealed class GeneralZipReader : IDisposable
             target = System.Text.Encoding.UTF8.GetString(ms.ToArray());
         }
 
+        if (!EntryPathResolver.LinkTargetStaysWithinRoot(rootDirectory, targetPath, target))
+        {
+            throw new ArchiveException("Symbolic link target escapes the extraction root", entry.FullName);
+        }
+
         try
         {
 #if NET8_0_OR_GREATER
@@ -918,6 +955,12 @@ public sealed class GeneralZipReader : IDisposable
             File.WriteAllText(targetPath, target, System.Text.Encoding.UTF8);
             return true;
         }
+    }
+
+    private static bool IsSymlink(IArchiveEntry entry)
+    {
+        var mode = (entry as IUnixEntry)?.UnixMode;
+        return mode.HasValue && (mode.Value & 0xF000u) == 0xA000u;
     }
 
     private void EnsureAttached()

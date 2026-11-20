@@ -137,7 +137,8 @@ internal sealed class TarEntryView : IArchiveEntry, IUnixEntry
         Size = size;
         LastWriteTime = mtime;
         IsDirectory = isDirectory;
-        UnixMode = linkName != null ? 0xA1FFu : unchecked((uint)mode & 0xFFFFFFFFu);
+        var type = linkName != null ? 0xA000u : isDirectory ? 0x4000u : 0x8000u;
+        UnixMode = type | (unchecked((uint)mode) & 0x0FFFu);
         SymlinkTarget = linkName;
     }
 
@@ -418,7 +419,7 @@ internal sealed class TarWriter : IArchiveWriter, IArchiveSymlinkWriter
     {
         var name = Normalize(entryName).TrimEnd('/');
         _tar.PutNextEntry(name + "/", 0, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
-            (int)(metadata.UnixMode ?? 493), isDirectory: true); // 0755 默认
+            (int)((metadata.UnixMode ?? 493) & 0x0FFF), isDirectory: true); // 0755 默认
         _tar.CloseEntry();
     }
 
@@ -433,7 +434,7 @@ internal sealed class TarWriter : IArchiveWriter, IArchiveSymlinkWriter
         var name = Normalize(entryName);
 
         _tar.PutNextEntry(name, size, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
-            (int)(metadata.UnixMode ?? 420), isDirectory: false); // 0644 默认
+            (int)((metadata.UnixMode ?? 420) & 0x0FFF), isDirectory: false); // 0644 默认
 
         var buffer = new byte[81920];
         long remaining = size;
@@ -461,7 +462,7 @@ internal sealed class TarWriter : IArchiveWriter, IArchiveSymlinkWriter
 
         var name = Normalize(entryName);
         _tar.PutNextEntry(name, 0, (metadata.LastWriteTime ?? DateTimeOffset.Now).UtcDateTime,
-            (int)(metadata.UnixMode ?? 0xA1FF), isDirectory: false, linkName: target);
+            (int)((metadata.UnixMode ?? 0xA1FF) & 0x0FFF), isDirectory: false, linkName: target);
         _tar.CloseEntry();
     }
 

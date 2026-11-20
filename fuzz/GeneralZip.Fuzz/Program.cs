@@ -3,19 +3,27 @@ using GeneralZip.Abstractions;
 
 namespace GeneralZip.Fuzz;
 
-/// <summary>
-/// 读路径 fuzz 入口（SharpFuzz/libFuzzer）。
-/// 运行方式：
-///   dotnet publish fuzz/GeneralZip.Fuzz -c Release -f net8.0 -o fuzz/out
-///   sharpfuzz fuzz/out/GeneralZip.dll
-///   ./fuzz/out/GeneralZip.Fuzz corpus/
-/// 断言面：任何输入都只允许归档类异常；崩溃即 fuzz 发现（详见 fuzz/README.md）。
-/// </summary>
+/// <summary>读路径 AFL fuzz 入口；传入文件路径时可重放 corpus 样本。</summary>
 internal static class Program
 {
-    /// <summary>libFuzzer 入口（输入为流）。</summary>
-    private static void Main()
+    private static void Main(string[] args)
     {
+        if (args.Length != 0)
+        {
+            foreach (var path in args)
+            {
+                var files = Directory.Exists(path)
+                    ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                    : new[] { path };
+                foreach (var file in files)
+                {
+                    FuzzReadPath(File.ReadAllBytes(file));
+                }
+            }
+
+            return;
+        }
+
         SharpFuzz.Fuzzer.RunOnce(stream =>
         {
             using var ms = new MemoryStream();

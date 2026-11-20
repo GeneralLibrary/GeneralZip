@@ -13,7 +13,7 @@ namespace GeneralZip.Formats.Zip;
 /// ZIP 读取器。打开时解析中央目录（含 Zip64），条目数据惰性解压。
 /// 加密条目经 IEncryptionProvider（extra field 匹配）或 ZipCrypto（标志位匹配）挂接。
 /// </summary>
-internal sealed class ZipReader : IArchiveReader
+internal sealed class ZipReader : IArchiveReader, ICancellableEntryStreamProvider
 {
     private readonly Stream _stream;
     private readonly bool _ownsStream;
@@ -55,18 +55,21 @@ internal sealed class ZipReader : IArchiveReader
     public bool IsEncrypted { get; }
 
     public Stream OpenEntryStream(IArchiveEntry entry)
+        => OpenEntryStream(entry, CancellationToken.None);
+
+    public Stream OpenEntryStream(IArchiveEntry entry, CancellationToken cancellationToken)
     {
         if (entry is not ZipEntryView view)
         {
             throw new ArgumentException("Entry does not belong to this archive (must come from Entries)", nameof(entry));
         }
 
-        return OpenEntryStreamCore(view);
+        return OpenEntryStreamCore(view, cancellationToken);
     }
 
     public void CopyEntryTo(IArchiveEntry entry, Stream destination, CancellationToken cancellationToken)
     {
-        using var source = OpenEntryStream(entry);
+        using var source = OpenEntryStream(entry, cancellationToken);
         var buffer = new byte[81920];
         int read;
         while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
@@ -76,7 +79,7 @@ internal sealed class ZipReader : IArchiveReader
         }
     }
 
-    private Stream OpenEntryStreamCore(ZipEntryView view)
+    private Stream OpenEntryStreamCore(ZipEntryView view, CancellationToken cancellationToken)
     {
         var central = view.Central;
 
@@ -156,9 +159,9 @@ internal sealed class ZipReader : IArchiveReader
         {
             ZipConstants.MethodStore => source,
             ZipConstants.MethodDeflate => new DeflateStream(source, CompressionMode.Decompress, leaveOpen: true),
-            ZipConstants.MethodBZip2 => new NativeTempDecodeStream(source, "bzip2"),
-            ZipConstants.MethodZstd => new NativeTempDecodeStream(source, "zstd"),
-            ZipConstants.MethodLzma => new NativeTempDecodeStream(source, "lzma-zip"),
+            ZipConstants.MethodBZip2 => new NativeTempDecodeStream(source, "bzip2", cancellationToken),
+            ZipConstants.MethodZstd => new NativeTempDecodeStream(source, "zstd", cancellationToken),
+            ZipConstants.MethodLzma => new NativeTempDecodeStream(source, "lzma-zip", cancellationToken),
             _ => throw new UnsupportedFormatException($"Unsupported ZIP compression method: {effectiveMethod}", view.FullName),
         };
 

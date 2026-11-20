@@ -141,11 +141,14 @@ public sealed class CpioFormat : IArchiveFormat
         if (magic == MagicOdc)
         {
             formatKind = "odc";
-            // 10 个 6 位八进制字段：dev ino mode uid gid nlink rdev mtime namesize filesize
-            var fields = new string[10];
+            // dev, ino, mode, uid, gid, nlink, rdev, mtime, namesize, filesize
+            var widths = new[] { 6, 6, 6, 6, 6, 6, 6, 11, 6, 11 };
+            var fields = new string[widths.Length];
             for (var i = 0; i < fields.Length; i++)
             {
-                fields[i] = System.Text.Encoding.ASCII.GetString(reader.ReadBytes(6));
+                var bytes = reader.ReadBytes(widths[i]);
+                if (bytes.Length != widths[i]) throw new ArchiveCorruptedException("Truncated CPIO odc header");
+                fields[i] = System.Text.Encoding.ASCII.GetString(bytes);
             }
 
             var mode = ParseOctal(fields[2]);
@@ -203,7 +206,9 @@ public sealed class CpioFormat : IArchiveFormat
             var fileSizeLo = ReadU16();
 
             var nameBytes = reader.ReadBytes(nameSize);
+            if (nameBytes.Length != nameSize) throw new ArchiveCorruptedException("Truncated CPIO binary name");
             var name = System.Text.Encoding.UTF8.GetString(nameBytes, 0, nameBytes.Length).TrimEnd('\0');
+            AlignTo2(stream);
 
             if (name == TrailerName || name.Length == 0)
             {
@@ -213,6 +218,7 @@ public sealed class CpioFormat : IArchiveFormat
             var fileSize = fileSizeHi | fileSizeLo;
             var offset = stream.Position;
             stream.Seek(fileSize, SeekOrigin.Current);
+            AlignTo2(stream);
 
             return new CpioEntryData
             {
@@ -235,6 +241,11 @@ public sealed class CpioFormat : IArchiveFormat
         {
             stream.Seek(pad, SeekOrigin.Current);
         }
+    }
+
+    private static void AlignTo2(Stream stream)
+    {
+        if ((stream.Position & 1) != 0) stream.Seek(1, SeekOrigin.Current);
     }
 
     private static uint ParseHex(string s) => uint.Parse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
@@ -355,7 +366,7 @@ public sealed class CpioFormat : IArchiveFormat
         public uint? UnixMode => _data.Mode;
 
         /// <summary>符号链接目标在数据段中；此处只报告判定，目标内容经 OpenEntryStream 读取。</summary>
-        public string? SymlinkTarget => _data.IsSymlink ? string.Empty : null;
+        public string? SymlinkTarget => null;
     }
 
     // ---------- 写入器（newc） ----------

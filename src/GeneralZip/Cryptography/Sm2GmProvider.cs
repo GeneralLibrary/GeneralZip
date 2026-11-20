@@ -109,6 +109,10 @@ public sealed class Sm2GmProvider : IEncryptionProvider, IPasswordlessWriteProvi
             // 口令不是合法私钥 hex → 口令错误
             throw new InvalidPasswordException(context.EntryName);
         }
+        catch (FormatException)
+        {
+            throw new InvalidPasswordException(context.EntryName);
+        }
 
         // 解封数据密钥：SM2 ECIES 的 C3 校验在解密内完成，错误私钥/篡改在此快速失败
         byte[] keyBlob;

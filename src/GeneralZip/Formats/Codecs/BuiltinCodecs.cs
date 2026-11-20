@@ -219,13 +219,13 @@ public sealed class GZipFormat : SingleFileCodecFormat
     protected override Stream OpenDecompress(Stream source) =>
         new System.IO.Compression.GZipStream(source, System.IO.Compression.CompressionMode.Decompress, leaveOpen: true);
 
-    internal override Stream OpenCompress(Stream destination) =>
+    protected override Stream OpenCompress(Stream destination) =>
         new System.IO.Compression.GZipStream(destination, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true);
 
     protected override bool MatchesPrefix(byte[] prefix, int length)
         => length >= 2 && prefix[0] == 0x1F && prefix[1] == 0x8B;
 
-    internal override string? NativeCodecId => null;
+    protected override string? NativeCodecId => null;
 }
 
 /// <summary>
@@ -240,12 +240,12 @@ public sealed class BZip2Format : SingleFileCodecFormat
 
     protected override Stream OpenDecompress(Stream source) => WrapWithNative("bzip2", source, decompress: true);
 
-    internal override Stream OpenCompress(Stream destination) => WrapWithNative("bzip2", destination, decompress: false);
+    protected override Stream OpenCompress(Stream destination) => WrapWithNative("bzip2", destination, decompress: false);
 
     protected override bool MatchesPrefix(byte[] prefix, int length)
         => length >= 3 && prefix[0] == (byte)'B' && prefix[1] == (byte)'Z' && prefix[2] == (byte)'h';
 
-    internal override string? NativeCodecId => "bzip2";
+    protected override string? NativeCodecId => "bzip2";
 
     /// <summary>供 TAR.BZ2 包装：解压为临时解码流；压缩为缓冲编码流（Dispose 时落盘）。</summary>
     internal static Stream WrapWithNative(string codec, Stream stream, bool decompress)
@@ -269,13 +269,13 @@ public sealed class XzFormat : SingleFileCodecFormat
 
     protected override Stream OpenDecompress(Stream source) => BZip2Format.WrapWithNative("xz", source, decompress: true);
 
-    internal override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("xz", destination, decompress: false);
+    protected override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("xz", destination, decompress: false);
 
     protected override bool MatchesPrefix(byte[] prefix, int length)
         => length >= 6 && prefix[0] == 0xFD && prefix[1] == 0x37 && prefix[2] == 0x7A
            && prefix[3] == 0x58 && prefix[4] == 0x5A && prefix[5] == 0x00;
 
-    internal override string? NativeCodecId => "xz";
+    protected override string? NativeCodecId => "xz";
 }
 
 /// <summary>
@@ -290,12 +290,12 @@ public sealed class ZstdFormat : SingleFileCodecFormat
 
     protected override Stream OpenDecompress(Stream source) => BZip2Format.WrapWithNative("zstd", source, decompress: true);
 
-    internal override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("zstd", destination, decompress: false);
+    protected override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("zstd", destination, decompress: false);
 
     protected override bool MatchesPrefix(byte[] prefix, int length)
         => length >= 4 && prefix[0] == 0x28 && prefix[1] == 0xB5 && prefix[2] == 0x2F && prefix[3] == 0xFD;
 
-    internal override string? NativeCodecId => "zstd";
+    protected override string? NativeCodecId => "zstd";
 }
 
 /// <summary>
@@ -310,12 +310,12 @@ public sealed class Lz4Format : SingleFileCodecFormat
 
     protected override Stream OpenDecompress(Stream source) => BZip2Format.WrapWithNative("lz4", source, decompress: true);
 
-    internal override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("lz4", destination, decompress: false);
+    protected override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("lz4", destination, decompress: false);
 
     protected override bool MatchesPrefix(byte[] prefix, int length)
         => length >= 4 && prefix[0] == 0x04 && prefix[1] == 0x22 && prefix[2] == 0x4D && prefix[3] == 0x18;
 
-    internal override string? NativeCodecId => "lz4";
+    protected override string? NativeCodecId => "lz4";
 }
 
 /// <summary>
@@ -331,9 +331,9 @@ public sealed class BrotliFormat : SingleFileCodecFormat
 
     protected override Stream OpenDecompress(Stream source) => BZip2Format.WrapWithNative("brotli", source, decompress: true);
 
-    internal override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("brotli", destination, decompress: false);
+    protected override Stream OpenCompress(Stream destination) => BZip2Format.WrapWithNative("brotli", destination, decompress: false);
 
     protected override bool MatchesPrefix(byte[] prefix, int length) => false; // 无魔数：仅扩展名识别
 
-    internal override string? NativeCodecId => "brotli";
+    protected override string? NativeCodecId => "brotli";
 }

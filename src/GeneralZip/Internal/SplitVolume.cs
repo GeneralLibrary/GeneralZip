@@ -11,6 +11,8 @@ namespace GeneralZip.Internal;
 /// </summary>
 internal sealed class VolumeSplitStream : Stream
 {
+    private static readonly Regex VolumeSuffixPattern = new(@"^(?<base>.+)\.(?<num>\d{3,})$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private readonly string _basePath;
     private readonly long _volumeSize;
     private readonly int _buffered;
@@ -25,7 +27,7 @@ internal sealed class VolumeSplitStream : Stream
             throw new ArgumentOutOfRangeException(nameof(volumeSize));
         }
 
-        _basePath = basePath;
+        _basePath = Path.GetFullPath(basePath);
         _volumeSize = volumeSize;
         OpenVolume(1);
     }
@@ -34,6 +36,33 @@ internal sealed class VolumeSplitStream : Stream
     public List<string> WrittenVolumes { get; } = new();
 
     public string FirstVolumePath => VolumePath(1);
+
+    public void Complete()
+    {
+        Flush();
+        var pattern = Path.GetFileName(_basePath) + ".*";
+        var directory = Path.GetDirectoryName(_basePath) ?? string.Empty;
+        foreach (var path in Directory.EnumerateFiles(directory, pattern))
+        {
+            var match = VolumeSuffixPattern.Match(Path.GetFileName(path));
+            if (match.Success
+                && string.Equals(
+                    Path.Combine(directory, match.Groups["base"].Value),
+                    _basePath,
+                    Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+                && int.TryParse(match.Groups["num"].Value, out var number)
+                && number > _index)
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
+    public static bool IsFirstVolumePath(string path)
+    {
+        var match = VolumeSuffixPattern.Match(Path.GetFileName(path));
+        return match.Success && int.TryParse(match.Groups["num"].Value, out var number) && number == 1;
+    }
 
     private string VolumePath(int index) => $"{_basePath}.{index:D3}";
 

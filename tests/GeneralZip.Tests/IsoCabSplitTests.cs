@@ -174,10 +174,10 @@ public class IsoCabSplitTests : IDisposable
         folderData.Write(data2);
         var folderBytes = folderData.ToArray();
 
-        // CFFILE 区大小：FIRST.TXT + SECOND.BIN（cbFile4+idx2+date2+time2+attr2+name+NUL）
+        // CFFILE 区大小：cbFile + uoffFolderStart + iFolder + date/time/attrs + name + NUL
         var fileArea =
-            (4 + 2 + 2 + 2 + 2 + ("FIRST.TXT".Length + 1)) +
-            (4 + 2 + 2 + 2 + 2 + ("SECOND.BIN".Length + 1));
+            (4 + 4 + 2 + 2 + 2 + 2 + ("FIRST.TXT".Length + 1)) +
+            (4 + 4 + 2 + 2 + 2 + 2 + ("SECOND.BIN".Length + 1));
 
         var headerSize = 36;
         var folderStart = headerSize;                    // CFFOLDER 紧随 header
@@ -211,6 +211,7 @@ public class IsoCabSplitTests : IDisposable
         void WriteFile(string name, uint size)
         {
             ms.Write(BitConverter.GetBytes(size));                 // cbFile
+            ms.Write(BitConverter.GetBytes((uint)(name == "SECOND.BIN" ? data1.Length : 0))); // uoffFolderStart
             ms.Write(BitConverter.GetBytes((ushort)0));            // ufoldIdx
             ms.Write(BitConverter.GetBytes((ushort)0));            // date
             ms.Write(BitConverter.GetBytes((ushort)0));            // time
@@ -224,12 +225,10 @@ public class IsoCabSplitTests : IDisposable
 
         // CFDATA × 1（NONE：块长 == 原长）
         ms.Write(BitConverter.GetBytes(0u));                       // checksum（读取器不校验）
-        ms.Write(BitConverter.GetBytes((ushort)0));                // csumBlock
-        ms.Write(BitConverter.GetBytes((ushort)0));                // csumTotal
         ms.Write(BitConverter.GetBytes((ushort)folderBytes.Length));
         ms.Write(BitConverter.GetBytes((ushort)folderBytes.Length));
         ms.Write(folderBytes);
-        Assert.Equal(folderDataStart + 12 + folderBytes.Length, ms.Length);
+        Assert.Equal(folderDataStart + 8 + folderBytes.Length, ms.Length);
 
         return ms.ToArray();
     }

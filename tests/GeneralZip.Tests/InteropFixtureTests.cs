@@ -20,7 +20,7 @@ public class InteropFixtureTests
     private static string FixtureDir
         => Path.Combine(AppContext.BaseDirectory, "samples", "fixtures", "interop");
 
-    private static bool HasCore => global::GeneralZip.Formats.Codecs.NativeBridgeProbe.IsAvailableSafe();
+    private static bool HasCore => global::GeneralZip.Formats.Codecs.NativeCodecRouter.IsCoreAvailable();
 
     private static byte[] ReadAll(string name)
         => File.ReadAllBytes(Path.Combine(FixtureDir, name));

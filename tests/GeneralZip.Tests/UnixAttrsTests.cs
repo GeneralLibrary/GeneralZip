@@ -117,7 +117,7 @@ public class UnixAttrsTests : IDisposable
     // ---------- 解压策略 ----------
 
     [Fact]
-    public void Extract_SymlinkPolicy_Skip_WritesTargetText()
+    public void Extract_SymlinkPolicy_Skip_DoesNotCreateFile()
     {
         var zip = Path.Combine(_dir, "skip.zip");
         using (var w = GeneralZipWriter.CreateNew(zip))
@@ -132,9 +132,8 @@ public class UnixAttrsTests : IDisposable
             SymlinkPolicy = SymlinkPolicy.Skip,
         });
 
-        // Skip 策略：目标文本作为普通文件落盘（不创建链接，无逃逸面）
-        Assert.True(File.Exists(Path.Combine(outDir, "dangling")));
-        Assert.False(File.GetAttributes(Path.Combine(outDir, "dangling")).HasFlag(FileAttributes.ReparsePoint));
+        Assert.Equal(1, result.SkippedCount);
+        Assert.False(File.Exists(Path.Combine(outDir, "dangling")));
     }
 
     [Fact]

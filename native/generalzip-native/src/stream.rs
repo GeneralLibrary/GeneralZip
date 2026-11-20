@@ -172,8 +172,8 @@ fn compress_with<R: Read, W: Write>(codec: &str, level: u32, input: &mut R, outp
             output.write_all(&[0x09, 0x16, 0x05, 0x00])?;
             let mut skip = SkippingWriter {
                 inner: output,
-                skip_from: 9,  // 4(zip 头)+1(props)+4(dict) 之后
-                skip_to: 17,   // 8B 未压缩大小字段
+                skip_from: 5,
+                skip_to: 13,
                 pos: 0,
             };
             let options = lzma_rs::compress::Options {

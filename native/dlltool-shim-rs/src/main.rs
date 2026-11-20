@@ -18,6 +18,7 @@ fn main() {
     let mut def: Option<String> = None;
     let mut out_lib: Option<String> = None;
     let mut dll_name: Option<String> = None;
+    let mut machine: Option<String> = None;
 
     let mut iter = args.iter();
     while let Some(a) = iter.next() {
@@ -26,7 +27,10 @@ fn main() {
             "-l" => out_lib = iter.next().cloned(),
             "-D" => dll_name = iter.next().cloned(),
             // 以下 dlltool 参数对本转译无意义，跳过（含其值）
-            "-m" | "-f" | "--temp-prefix" => {
+            "-m" => {
+                machine = iter.next().cloned();
+            }
+            "-f" | "--temp-prefix" => {
                 iter.next();
             }
             _ => {}
@@ -80,7 +84,20 @@ fn main() {
     out_arg.push_str(&out_display);
     lld_args.push(def_arg);
     lld_args.push(out_arg);
-    lld_args.push("/MACHINE:X64".into());
+    let machine = match machine.as_deref() {
+        Some("i386") | Some("i386:x86-32") => "X86",
+        Some("i386:x86-64") | Some("x86-64") => "X64",
+        Some("arm64") | Some("aarch64") => "ARM64",
+        Some(other) => {
+            eprintln!("gzdlltool: unsupported machine type {other}");
+            std::process::exit(1);
+        }
+        None => {
+            eprintln!("gzdlltool: missing -m machine type");
+            std::process::exit(1);
+        }
+    };
+    lld_args.push(format!("/MACHINE:{machine}"));
     lld_args.push("/NOLOGO".into());
 
     let status = Command::new(lld).args(&lld_args).status();

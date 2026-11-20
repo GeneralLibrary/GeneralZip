@@ -186,16 +186,47 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         AddEntryCore(entryName, content, meta.Size >= 0 ? meta.Size : null, meta.LastWriteTime, CancellationToken.None, meta);
     }
 
+    public Task AddStreamAsync(
+        string entryName,
+        Stream content,
+        long? size = null,
+        DateTimeOffset? lastWriteTime = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (content == null) throw new ArgumentNullException(nameof(content));
+        return Task.Run(
+            () => AddEntryCore(entryName, content, size, lastWriteTime, cancellationToken),
+            cancellationToken);
+    }
+
+    internal Task AddStreamAsync(
+        string entryName,
+        Stream content,
+        ArchiveEntryMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+        var meta = metadata.Clone();
+        return Task.Run(
+            () => AddEntryCore(entryName, content, meta.Size >= 0 ? meta.Size : null, meta.LastWriteTime, cancellationToken, meta),
+            cancellationToken);
+    }
+
     /// <summary>
     /// 写入一个目录占位条目（格式支持时；不支持目录概念的格式会忽略）。
     /// </summary>
     public void AddDirectoryEntry(string entryName, DateTimeOffset? lastWriteTime = null)
-    {
-        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
-        _inner.AddDirectoryEntry(entryName, new ArchiveEntryMetadata
+        => AddDirectoryEntry(entryName, new ArchiveEntryMetadata
         {
             LastWriteTime = lastWriteTime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
         });
+
+    internal void AddDirectoryEntry(string entryName, ArchiveEntryMetadata metadata)
+    {
+        if (entryName == null) throw new ArgumentNullException(nameof(entryName));
+        if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+        _inner.AddDirectoryEntry(entryName, metadata);
     }
 
     /// <summary>
@@ -205,19 +236,23 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
     /// <param name="target">链接目标路径（原样写入归档，不做解析）。</param>
     /// <param name="lastWriteTime">时间戳。</param>
     public void AddSymlink(string entryName, string target, DateTimeOffset? lastWriteTime = null)
+        => AddSymlink(entryName, target, new ArchiveEntryMetadata
+        {
+            LastWriteTime = lastWriteTime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
+        });
+
+    internal void AddSymlink(string entryName, string target, ArchiveEntryMetadata metadata)
     {
         if (entryName == null) throw new ArgumentNullException(nameof(entryName));
         if (target == null) throw new ArgumentNullException(nameof(target));
+        if (metadata == null) throw new ArgumentNullException(nameof(metadata));
 
         if (_inner is not IArchiveSymlinkWriter symlinkWriter)
         {
             throw new NotSupportedException($"Format {_inner.Info.Name} does not support symbolic link entries");
         }
 
-        symlinkWriter.AddSymlink(entryName, target, new ArchiveEntryMetadata
-        {
-            LastWriteTime = lastWriteTime ?? _options.DefaultLastWriteTime ?? DateTimeOffset.Now,
-        });
+        symlinkWriter.AddSymlink(entryName, target, metadata);
     }
 
     /// <summary>完成归档（写中央目录/索引）。Dispose 未 Finish 时会自动调用。</summary>
@@ -227,18 +262,25 @@ public sealed class GeneralZipWriter : IDisposable, IAsyncDisposable
         _finished = true;
         _progress.SwitchPhase(ArchivePhase.Finalizing);
         _inner.Finish(cancellationToken);
+        if (_ownsStream is global::GeneralZip.Internal.VolumeSplitStream split)
+        {
+            split.Complete();
+        }
         _progress.Finalize();
     }
 
     /// <summary>异步完成归档。</summary>
-    public Task FinishAsync(CancellationToken cancellationToken = default)
+    public async Task FinishAsync(CancellationToken cancellationToken = default)
     {
-        if (_finished) return Task.CompletedTask;
+        if (_finished) return;
         _finished = true;
         _progress.SwitchPhase(ArchivePhase.Finalizing);
-        var t = _inner.FinishAsync(cancellationToken);
+        await _inner.FinishAsync(cancellationToken).ConfigureAwait(false);
+        if (_ownsStream is global::GeneralZip.Internal.VolumeSplitStream split)
+        {
+            split.Complete();
+        }
         _progress.Finalize();
-        return t;
     }
 
     // ---------- 内部 ----------

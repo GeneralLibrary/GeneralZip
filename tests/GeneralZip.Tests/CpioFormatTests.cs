@@ -70,6 +70,53 @@ public class CpioFormatTests : IDisposable
     }
 
     [Fact]
+    public void Newc_SymlinkPreserve_ExtractsLink()
+    {
+        var archive = Path.Combine(_dir, "preserve-link.cpio");
+        using (var writer = GeneralZipWriter.CreateNew(archive))
+        {
+            writer.AddSymlink("alias", "target/x.txt");
+            writer.Finish();
+        }
+
+        var output = Path.Combine(_dir, "preserved");
+        var result = GeneralZip.Extract(archive, output, extraction: new ExtractionOptions
+        {
+            SymlinkPolicy = SymlinkPolicy.Preserve,
+        });
+
+        Assert.Equal(1, result.ProcessedCount);
+        var link = Path.Combine(output, "alias");
+        if ((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0)
+        {
+            Assert.Equal("target/x.txt", new FileInfo(link).LinkTarget);
+        }
+        else
+        {
+            Assert.Equal("target/x.txt", File.ReadAllText(link));
+        }
+    }
+
+    [Fact]
+    public void ParallelExtraction_UsesWorkerOwnedCpioEntries()
+    {
+        var archive = Path.Combine(_dir, "parallel.cpio");
+        using (var writer = GeneralZipWriter.CreateNew(archive))
+        {
+            writer.AddStream("a.txt", new MemoryStream("a"u8.ToArray()), 1);
+            writer.AddStream("b.txt", new MemoryStream("b"u8.ToArray()), 1);
+            writer.Finish();
+        }
+
+        var result = GeneralZip.Extract(archive, Path.Combine(_dir, "parallel"), extraction: new ExtractionOptions
+        {
+            MaxDegreeOfParallelism = 2,
+        });
+
+        Assert.Equal(2, result.ProcessedCount);
+    }
+
+    [Fact]
     public void Newc_UnixModePreserved()
     {
         var cpio = Path.Combine(_dir, "mode.cpio");
@@ -88,7 +135,7 @@ public class CpioFormatTests : IDisposable
         Assert.Equal(0x81C0u, unix.UnixMode);
     }
 
-    /// <summary>手工构造 odc（070707，八进制 ASCII，无对齐）归档。</summary>
+    /// <summary>手工构造 odc（070707，标准八进制字段宽度，无对齐）归档。</summary>
     [Fact]
     public void Odc_Vector_Read()
     {
@@ -131,7 +178,9 @@ public class CpioFormatTests : IDisposable
         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(24), (ushort)data.Length);
         ms.Write(header);
         ms.Write(name);
+        if ((ms.Position & 1) != 0) ms.WriteByte(0);
         ms.Write(data);
+        if ((ms.Position & 1) != 0) ms.WriteByte(0);
 
         // trailer（binary trailer 名 "TRAILER!!!"）
         var trailerName = Encoding.ASCII.GetBytes("TRAILER!!!\0");
@@ -139,6 +188,7 @@ public class CpioFormatTests : IDisposable
         BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(20), (ushort)trailerName.Length);
         ms.Write(header);
         ms.Write(trailerName);
+        if ((ms.Position & 1) != 0) ms.WriteByte(0);
         ms.Position = 0;
 
         using var r = GeneralZipReader.Open(ms);
@@ -155,9 +205,9 @@ public class CpioFormatTests : IDisposable
     private static void WriteOdcEntry(Stream s, string name, byte[] data, uint mode, long mtime)
     {
         var nameBytes = Encoding.UTF8.GetBytes(name + "\0");
-        static string Oct(long v) => Convert.ToString(v, 8).PadLeft(6, '0');
+        static string Oct(long v, int width = 6) => Convert.ToString(v, 8).PadLeft(width, '0');
         var header = "070707" + Oct(0) + Oct(1) + Oct(mode) + Oct(0) + Oct(0) + Oct(1) + Oct(0)
-                     + Oct(mtime) + Oct(nameBytes.Length) + Oct(data.Length);
+                     + Oct(mtime, 11) + Oct(nameBytes.Length) + Oct(data.Length, 11);
         var headerBytes = Encoding.ASCII.GetBytes(header);
         s.Write(headerBytes, 0, headerBytes.Length);
         s.Write(nameBytes, 0, nameBytes.Length);
@@ -167,12 +217,13 @@ public class CpioFormatTests : IDisposable
     private static void WriteOdcTrailer(Stream s)
     {
         var nameBytes = Encoding.ASCII.GetBytes("TRAILER!!!\0");
-        static string OctT(long v) => Convert.ToString(v, 8).PadLeft(6, '0');
+        static string OctT(long v, int width = 6) => Convert.ToString(v, 8).PadLeft(width, '0');
         var header = "070707" + OctT(0) + OctT(2) + OctT(0) + OctT(0) + OctT(0) + OctT(1) + OctT(0)
-                     + OctT(0) + OctT(nameBytes.Length) + OctT(0);
+                     + OctT(0, 11) + OctT(nameBytes.Length) + OctT(0, 11);
         var headerBytes = Encoding.ASCII.GetBytes(header);
         s.Write(headerBytes, 0, headerBytes.Length);
         s.Write(nameBytes, 0, nameBytes.Length);
+        if ((s.Position & 1) != 0) s.WriteByte(0);
     }
 
 }

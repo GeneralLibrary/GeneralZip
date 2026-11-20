@@ -35,16 +35,20 @@ public abstract class SingleFileCodecFormat : IArchiveFormat
     protected abstract Stream OpenDecompress(Stream source);
 
     /// <summary>压缩包装（托管路径；CodecWriter 对原生格式不走此处）。</summary>
-    internal abstract Stream OpenCompress(Stream destination);
+    protected abstract Stream OpenCompress(Stream destination);
 
     /// <summary>签名检查（前部字节）。</summary>
     protected abstract bool MatchesPrefix(byte[] prefix, int length);
 
     /// <summary>原生编解码器标识（Rust 核心中的 codec id）；null = 托管实现（GZIP）。</summary>
-    internal abstract string? NativeCodecId { get; }
+    protected virtual string? NativeCodecId => null;
 
     /// <summary>是否为原生转码格式（写入直通、读取经临时解码）。</summary>
     internal bool IsNativeTranscoder => NativeCodecId != null;
+
+    internal string? CodecId => NativeCodecId;
+
+    internal Stream CreateCompressor(Stream destination) => OpenCompress(destination);
 
     public bool MatchesSignature(Stream stream)
     {
@@ -197,6 +201,7 @@ internal sealed class CodecWriter : IArchiveWriter
     private readonly SingleFileCodecFormat _owner;
     private readonly ArchiveWriteOptions _options;
     private bool _finished;
+    private bool _entryAdded;
 
     public CodecWriter(Stream destination, ArchiveFormatInfo info, SingleFileCodecFormat owner)
     {
@@ -204,7 +209,7 @@ internal sealed class CodecWriter : IArchiveWriter
         Info = info;
         _owner = owner;
         _options = new ArchiveWriteOptions();
-        _compressWrap = owner.IsNativeTranscoder ? null : owner.OpenCompress(destination);
+        _compressWrap = owner.IsNativeTranscoder ? null : owner.CreateCompressor(destination);
     }
 
     public ArchiveFormatInfo Info { get; }
@@ -219,11 +224,17 @@ internal sealed class CodecWriter : IArchiveWriter
     public void AddEntry(string entryName, Stream content, ArchiveEntryMetadata metadata, CancellationToken cancellationToken)
     {
         _owner.EnsureWritable();
+        if (_entryAdded)
+        {
+            throw new NotSupportedException($"Format {_owner.Info.Name} supports only one input entry");
+        }
+
+        _entryAdded = true;
 
         if (_owner.IsNativeTranscoder)
         {
             // 直通流式压缩：明文经回调拉入 Rust 核心，压缩字节直接落盘
-            NativeCodecRouter.CompressStream(content, _destination, _owner.NativeCodecId!, level: 6, cancellationToken);
+            NativeCodecRouter.CompressStream(content, _destination, _owner.CodecId!, level: 6, cancellationToken);
             return;
         }
 

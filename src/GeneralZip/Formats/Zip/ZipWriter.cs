@@ -29,6 +29,7 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
     // 并行分片压缩状态（MaxDegreeOfParallelism > 1 时启用）
     private readonly List<StagedEntry>? _staged;
     private readonly SemaphoreSlim? _stagingSemaphore;
+    private readonly PrivateTempDirectory? _stagingDirectory;
 
     public ZipWriter(Stream output, ArchiveWriteOptions options, bool ownsStream, GeneralZipEncryptionRegistry? encryption = null)
     {
@@ -58,6 +59,7 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
         {
             _staged = new List<StagedEntry>();
             _stagingSemaphore = new SemaphoreSlim(options.MaxDegreeOfParallelism);
+            _stagingDirectory = new PrivateTempDirectory("gzp-stage");
         }
     }
 
@@ -92,6 +94,10 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
     {
         if (entryName == null) throw new ArgumentNullException(nameof(entryName));
         if (target == null) throw new ArgumentNullException(nameof(target));
+        if (_encryption != null)
+        {
+            throw new NotSupportedException("ZIP symlink entries cannot be encrypted");
+        }
 
         var name = NormalizeName(entryName);
         ZipTime.ToDos(metadata.LastWriteTime ?? DateTimeOffset.Now, out var dosTime, out var dosDate);
@@ -108,7 +114,7 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
         WriteDescriptor(_counter, crc, compSize, targetBytes.Length);
 
         var symlinkMeta = metadata.Clone();
-        symlinkMeta.UnixMode = 0xA1FF; // S_IFLNK | 0777
+        symlinkMeta.UnixMode ??= 0xA1FF; // S_IFLNK | 0777
         _centrals.Add(new CentralRecord(name, ZipConstants.MethodStore, dosTime, dosDate,
             crc, compSize, targetBytes.Length, offset, symlinkMeta, null, null, isDirectory: false, isEncrypted: false));
     }
@@ -216,15 +222,15 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
 
         // 1) 顺序捕获明文（信号量限流：槽满时阻塞生产端）
         _stagingSemaphore!.Wait(ct);
-        var plaintextPath = Path.Combine(Path.GetTempPath(), $"gzp-stage-{Guid.NewGuid():N}.in");
-        var fragmentPath = Path.Combine(Path.GetTempPath(), $"gzp-stage-{Guid.NewGuid():N}.frag");
+        var plaintextPath = _stagingDirectory!.FilePath($"{Guid.NewGuid():N}.in");
+        var fragmentPath = _stagingDirectory.FilePath($"{Guid.NewGuid():N}.frag");
 
         var staged = new StagedEntry(name, method, dosTime, dosDate, metadata, plan, plaintextPath, fragmentPath);
         _staged!.Add(staged);
 
         try
         {
-            using (var plain = new FileStream(plaintextPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: false))
+            using (var plain = new FileStream(plaintextPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, useAsync: false))
             {
                 CopyPlain(content, plain, ct);
             }
@@ -443,6 +449,7 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
         Buffer.BlockCopy(comment, 0, eocd, 22, comment.Length);
         _counter.Write(eocd, 0, eocd.Length);
         _output.Flush();
+        _stagingDirectory?.Dispose();
     }
 
     public Task FinishAsync(CancellationToken cancellationToken)
@@ -710,6 +717,8 @@ internal sealed class ZipWriter : IArchiveWriter, IArchiveSymlinkWriter
                 // 自动收尾失败不遮蔽主异常（与门面 Dispose 语义一致）
             }
         }
+
+        _stagingDirectory?.Dispose();
 
         if (_ownsStream)
         {

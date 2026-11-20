@@ -17,7 +17,7 @@ namespace GeneralZip.Tests;
 public class ZipMethodTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), $"gzp-test-{Guid.NewGuid():N}");
-    private static readonly bool HasCore = global::GeneralZip.Formats.Codecs.NativeBridgeProbe.IsAvailableSafe();
+    private static readonly bool HasCore = global::GeneralZip.Formats.Codecs.NativeCodecRouter.IsCoreAvailable();
 
     public ZipMethodTests()
     {
@@ -171,6 +171,16 @@ public class ZipMethodTests : IDisposable
         {
             Assert.Equal("sample", r.Entries[0].FullName);
         }
+    }
+
+    [Fact]
+    public void SingleFileCodec_RejectsSecondEntry()
+    {
+        var gzip = Path.Combine(_dir, "single.gz");
+        using var writer = GeneralZipWriter.CreateNew(gzip, formatName: "GZIP");
+        writer.AddStream("first", new MemoryStream(new byte[] { 1 }), 1);
+        Assert.Throws<NotSupportedException>(() =>
+            writer.AddStream("second", new MemoryStream(new byte[] { 2 }), 1));
     }
 
     [Fact]

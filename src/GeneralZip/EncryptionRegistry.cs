@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GeneralZip.Abstractions;
 
 namespace GeneralZip;
@@ -21,6 +22,18 @@ public sealed class GeneralZipKdfRegistry
 
         lock (_lock)
         {
+            if (_bySpecId.TryGetValue(provider.SpecId, out var bySpecId)
+                && !string.Equals(bySpecId.KdfId, provider.KdfId, StringComparison.OrdinalIgnoreCase))
+            {
+                _byName.Remove(bySpecId.KdfId);
+            }
+
+            if (_byName.TryGetValue(provider.KdfId, out var byName)
+                && byName.SpecId != provider.SpecId)
+            {
+                _bySpecId.Remove(byName.SpecId);
+            }
+
             _bySpecId[provider.SpecId] = provider;
             _byName[provider.KdfId] = provider;
         }
@@ -96,6 +109,16 @@ public sealed class GeneralZipEncryptionRegistry
 
         lock (_lock)
         {
+            foreach (var id in _byZipExtraField.Keys.ToArray())
+            {
+                var list = _byZipExtraField[id];
+                list.RemoveAll(p => string.Equals(p.AlgorithmId, provider.AlgorithmId, StringComparison.OrdinalIgnoreCase));
+                if (list.Count == 0)
+                {
+                    _byZipExtraField.Remove(id);
+                }
+            }
+
             _byId[provider.AlgorithmId] = provider;
             foreach (var id in provider.ZipExtraFieldIds)
             {

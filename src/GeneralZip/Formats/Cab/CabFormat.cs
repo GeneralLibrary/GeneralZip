@@ -161,10 +161,10 @@ public sealed class CabFormat : IArchiveFormat
 
             // CFFILE × cFiles（自 coffFiles 顺序排列）
             stream.Position = coffFiles;
-            var offsets = new long[cFolders];
             for (var i = 0; i < cFiles; i++)
             {
                 var size = reader.ReadUInt32();
+                var offsetInFolder = reader.ReadUInt32();
                 var folderIndex = reader.ReadUInt16();
                 var date = reader.ReadUInt16();
                 var time = reader.ReadUInt16();
@@ -201,12 +201,10 @@ public sealed class CabFormat : IArchiveFormat
                 {
                     Name = name,
                     Size = size,
-                    OffsetInFolder = offsets[folderIndex],
+                    OffsetInFolder = offsetInFolder,
                     Attribs = attribs,
                     MTime = DecodeDosDateTime(date, time),
                 };
-                offsets[folderIndex] += size;
-
                 _entries.Add((folder, new CabEntryView(data, Format)));
             }
         }
@@ -222,7 +220,7 @@ public sealed class CabFormat : IArchiveFormat
             s.Position = dataStart;
             for (var i = 0; i < cDataBlocks; i++)
             {
-                s.Position += 4 + 2 + 2; // checksum + csumBlock + csumTotal
+                s.Position += 4; // checksum
                 var cbData = ReadU16(s);
                 var cbUncomp = ReadU16(s);
                 var payloadOffset = s.Position;

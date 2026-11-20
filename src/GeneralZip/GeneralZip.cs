@@ -168,7 +168,27 @@ public static class GeneralZip
 
         using (var writer = GeneralZipWriter.CreateNew(output, formatName, configure))
         {
-            writer.AddStream(entryName ?? "content", source);
+            if (source.CanSeek)
+            {
+                var remaining = source.Length - source.Position;
+                if (remaining < 0) throw new IOException("Stream position is beyond its length");
+                await writer.AddStreamAsync(entryName ?? "content", source, remaining, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                using var tempDirectory = new Internal.PrivateTempDirectory("gzp-stream");
+                var tempPath = tempDirectory.FilePath("input.bin");
+                using (var buffered = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    await source.CopyToAsync(buffered, 81920, cancellationToken).ConfigureAwait(false);
+                }
+
+                using var bufferedInput = File.OpenRead(tempPath);
+                await writer.AddStreamAsync(entryName ?? "content", bufferedInput, bufferedInput.Length, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             await writer.FinishAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -281,7 +301,8 @@ public static class GeneralZip
                     : true,
             writeConfigure: null,
             replaceOriginal: true,
-            cancellationToken);
+            cancellationToken,
+            inheritEncryption: true);
     }
 
     /// <summary>
@@ -346,28 +367,48 @@ public static class GeneralZip
 
         var target = replaceOriginal ? sourceArchive : targetArchive
                      ?? throw new ArgumentNullException(nameof(targetArchive));
+        if (replaceOriginal && Internal.VolumeSplitStream.IsFirstVolumePath(sourceArchive))
+        {
+            throw new NotSupportedException("Append and Remove do not support in-place rewriting of split ZIP archives");
+        }
 
-        using var reader = GeneralZipReader.Open(sourceArchive, openConfigure);
+        string? configuredReadPassword = null;
+        Action<ArchiveOpenOptions>? observedOpenConfigure = openConfigure == null
+            ? null
+            : options =>
+            {
+                openConfigure(options);
+                configuredReadPassword = options.Password;
+            };
+        using var reader = GeneralZipReader.Open(sourceArchive, observedOpenConfigure);
         // 追加/删除保持源格式；转换（replaceOriginal=false）由目标路径扩展名推断目标格式
         var formatName = replaceOriginal ? reader.Format.Name : null;
 
         // 追加加密归档的安全默认：给了口令但未指定算法时，继承源归档的加密算法，
         // 避免"口令仅用于读取、产物静默变成明文"的坑。
         string? inheritedAlgorithm = null;
+        string? inheritedPassword = null;
         if (inheritEncryption)
         {
             var probe = new ArchiveWriteOptions();
             writeConfigure?.Invoke(probe);
-            if (probe.Password != null && probe.EncryptionAlgorithm == null && probe.EncryptionProvider == null)
+            if (probe.EncryptionAlgorithm == null && probe.EncryptionProvider == null)
             {
+                var algorithms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var e in reader.Entries)
                 {
                     if (!e.IsDirectory && e.IsEncrypted && e.EncryptionAlgorithm != null)
                     {
-                        inheritedAlgorithm = e.EncryptionAlgorithm;
-                        break;
+                        algorithms.Add(e.EncryptionAlgorithm);
                     }
                 }
+
+                if (algorithms.Count > 1)
+                    throw new NotSupportedException("Cannot safely rewrite an archive containing multiple encryption algorithms");
+                inheritedAlgorithm = algorithms.SingleOrDefault();
+                inheritedPassword = probe.Password ?? configuredReadPassword;
+                if (inheritedAlgorithm != null && inheritedPassword == null)
+                    throw new InvalidOperationException("Rewriting encrypted archives requires a password for re-encryption");
             }
         }
 
@@ -382,6 +423,12 @@ public static class GeneralZip
                        if (inheritedAlgorithm != null && o.EncryptionAlgorithm == null && o.EncryptionProvider == null)
                        {
                            o.EncryptionAlgorithm = inheritedAlgorithm;
+                           o.Password ??= inheritedPassword;
+                           if (string.Equals(inheritedAlgorithm, "SM2-GM", StringComparison.OrdinalIgnoreCase)
+                               && o.RecipientPublicKey == null && o.Password != null)
+                           {
+                               o.RecipientPublicKey = Cryptography.Sm2KeyPair.FromPrivateKeyHex(o.Password).PublicKeyHex;
+                           }
                        }
                    }, formatName))
             {

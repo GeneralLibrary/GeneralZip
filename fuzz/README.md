@@ -7,7 +7,7 @@
 - `GeneralZip.Fuzz/` — SharpFuzz harness（libFuzzer/AFL 桥接），fuzz 目标 = `GeneralZipReader.Open(stream)` + 全条目流式读取。
 - `tests/GeneralZip.Tests/RobustnessTests.cs` — 无需 fuzz 工具链的 CI 健壮性回归：随机字节 / 截断归档 / 位翻转变异，断言只允许归档类异常。
 
-## 本地运行（AFL++ 或 libFuzzer）
+## 本地运行（AFL++）
 
 ```bash
 # 1. 构建 harness（需 libFuzzer 运行时；.NET 8 SDK 自带 shadow copy 方式不再适用，
@@ -17,11 +17,11 @@ dotnet publish fuzz/GeneralZip.Fuzz -c Release -f net8.0 -o fuzz/out
 # 2. 注入路径覆盖插桩
 sharpfuzz fuzz/out/GeneralZip.dll
 
-# 3. libFuzzer 驱动（或 afl-fuzz -i corpus -o findings）
-./fuzz/out/GeneralZip.Fuzz corpus/
+# 3. AFL++ 驱动（SharpFuzz 使用 AFL 的共享内存接口）
+afl-fuzz -i corpus -o findings -- dotnet fuzz/out/GeneralZip.Fuzz.dll
 
 # 4. 复现某个 finding
-./fuzz/out/GeneralZip.Fuzz findings/crash-<id>
+dotnet fuzz/out/GeneralZip.Fuzz.dll findings/crash-<id>
 ```
 
 ## 判定规则

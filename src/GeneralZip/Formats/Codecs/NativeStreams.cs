@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Threading;
+using GeneralZip.Internal;
 
 namespace GeneralZip.Formats.Codecs;
 
@@ -10,24 +12,33 @@ namespace GeneralZip.Formats.Codecs;
 internal sealed class NativeTempDecodeStream : Stream
 {
     private readonly string _tempPath;
+    private readonly PrivateTempDirectory _tempDirectory;
     private FileStream? _result;
     private bool _disposed;
 
-    public NativeTempDecodeStream(Stream source, string codec)
+    public NativeTempDecodeStream(Stream source, string codec, CancellationToken cancellationToken = default)
     {
-        _tempPath = Path.Combine(Path.GetTempPath(), $"gzp-decode-{Guid.NewGuid():N}.out");
+        _tempDirectory = new PrivateTempDirectory("gzp-decode");
+        _tempPath = _tempDirectory.FilePath("decoded.out");
         try
         {
             using (var output = File.Create(_tempPath, 65536))
             {
-                NativeCodecRouter.DecompressStream(source, output, codec, CancellationToken.None);
+                NativeCodecRouter.DecompressStream(source, output, codec, cancellationToken);
+            }
+
+            var buffer = new byte[81920];
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             _result = new FileStream(_tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
         }
         catch
         {
-            TryDelete(_tempPath);
+            _tempDirectory.Dispose();
             throw;
         }
     }
@@ -49,15 +60,10 @@ internal sealed class NativeTempDecodeStream : Stream
             _disposed = true;
             _result?.Dispose();
             _result = null;
-            TryDelete(_tempPath);
+            _tempDirectory.Dispose();
         }
 
         base.Dispose(disposing);
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { File.Delete(path); } catch { /* 清理失败忽略 */ }
     }
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();

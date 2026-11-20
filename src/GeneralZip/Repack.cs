@@ -33,7 +33,11 @@ internal static class Repack
 
             if (entry.IsDirectory)
             {
-                writer.AddDirectoryEntry(entry.FullName, entry.LastWriteTime);
+                writer.AddDirectoryEntry(entry.FullName, new ArchiveEntryMetadata
+                {
+                    LastWriteTime = entry.LastWriteTime,
+                    UnixMode = (entry as IUnixEntry)?.UnixMode,
+                });
                 copied++;
                 continue;
             }
@@ -43,10 +47,43 @@ internal static class Repack
                 Size = entry.Size,
                 LastWriteTime = entry.LastWriteTime,
                 Comment = entry.Comment,
+                UnixMode = (entry as IUnixEntry)?.UnixMode,
             };
 
             using var content = reader.OpenEntryStream(entry);
-            writer.AddStream(entry.FullName, content, meta);
+            if (meta.UnixMode.HasValue && (meta.UnixMode.Value & 0xF000u) == 0xA000u)
+            {
+                string target;
+                if ((entry as IUnixEntry)?.SymlinkTarget is { } headerTarget)
+                {
+                    target = headerTarget;
+                }
+                else
+                {
+                    using var targetText = new MemoryStream();
+                    content.CopyTo(targetText);
+                    target = System.Text.Encoding.UTF8.GetString(targetText.ToArray());
+                }
+
+                writer.AddSymlink(entry.FullName, target, meta);
+            }
+            else if (meta.Size < 0)
+            {
+                using var tempDirectory = new Internal.PrivateTempDirectory("gzp-repack");
+                var tempPath = tempDirectory.FilePath("entry.bin");
+                using (var output = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    content.CopyTo(output);
+                    meta.Size = output.Length;
+                }
+
+                using var measured = File.OpenRead(tempPath);
+                writer.AddStream(entry.FullName, measured, meta);
+            }
+            else
+            {
+                writer.AddStream(entry.FullName, content, meta);
+            }
             copied++;
         }
 
@@ -90,7 +127,8 @@ internal static class Repack
 #else
         if (File.Exists(targetPath))
         {
-            File.Delete(targetPath);
+            File.Replace(sourcePath, targetPath, destinationBackupFileName: null);
+            return;
         }
 
         File.Move(sourcePath, targetPath);

@@ -449,7 +449,7 @@ internal sealed class TarStreamWriter : IDisposable
         header[156] = typeFlag;
         if (linkName != null)
         {
-            WriteField(header, 157, 100, linkName);
+            WriteNameBytes(header, 157, 100, linkName, _encoding);
         }
 
         WriteField(header, 257, 6, "ustar");

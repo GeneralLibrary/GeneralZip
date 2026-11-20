@@ -50,6 +50,67 @@ internal static class EntryPathResolver
         return combined;
     }
 
+    public static bool ContainsReparsePoint(string rootDirectory, string targetPath)
+    {
+        var root = NormalizeRoot(rootDirectory);
+        var target = Path.GetFullPath(targetPath);
+        var comparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        if (!target.Equals(root, comparison) && !target.StartsWith(rootPrefix, comparison))
+        {
+            return true;
+        }
+
+        var relative = target.Length == root.Length ? string.Empty : target.Substring(rootPrefix.Length);
+        var current = root;
+        if (IsReparsePoint(current)) return true;
+        foreach (var segment in relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            if (IsReparsePoint(current)) return true;
+        }
+
+        return false;
+    }
+
+    public static bool LinkTargetStaysWithinRoot(string rootDirectory, string linkPath, string target)
+    {
+        if (Path.IsPathRooted(target) || (target.Length >= 2 && target[1] == ':'))
+        {
+            return false;
+        }
+
+        var resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(linkPath) ?? rootDirectory, target));
+        var comparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var root = NormalizeRoot(rootDirectory);
+        var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        return (resolved.Equals(root, comparison) || resolved.StartsWith(rootPrefix, comparison))
+            && !ContainsReparsePoint(root, resolved);
+    }
+
+    private static string NormalizeRoot(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var root = Path.GetPathRoot(full) ?? string.Empty;
+        var trimmed = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return trimmed.Length < root.Length ? root : trimmed;
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
+        catch (IOException) { return false; }
+    }
+
     /// <summary>保留末段文件名。</summary>
     public static (string dir, string name) SplitName(string fullName)
     {
